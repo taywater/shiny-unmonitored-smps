@@ -45,10 +45,10 @@
              SELECT DISTINCT deployment_full_cwl.smp_id
                FROM fieldwork.deployment_full_cwl
     	)
-    select distinct sfc.smp_id from smpid_facilityid_componentid sfc  where NOT (EXISTS ( SELECT cs.smp_id
+    select distinct sbd.smp_id from greenit_smpbestdata sbd  where NOT (EXISTS ( SELECT cs.smp_id
                FROM cwl_smp cs
-              WHERE cs.smp_id = sfc.smp_id)) 
-    		  order by sfc.smp_id")  %>% 
+              WHERE cs.smp_id = sbd.smp_id)) 
+    		  order by sbd.smp_id")  %>% 
         dplyr::arrange(smp_id) %>% 
         dplyr::pull()
     
@@ -67,14 +67,22 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean")
                   tabPanel("Unmonitored Active SMPs", value = "main_tab", 
                            titlePanel("Unmonitored Active SMPs"),
                            sidebarPanel(checkboxInput("exclude_future", "Exclude SMPs with Future Deployments?"), 
-                           downloadButton("download", label = "Download")
+                           downloadButton("download", label = "Download"), 
+                           h5("This query looks for SMPs that meeting the following criteria:
+                              a CAPIT Status of Construction-Substantially Complete or Closed;
+                              SMP is not \"not built\" or \"retired\";
+                              no inactive or plugged inlets, structures, or conveyance;
+                              no continuous water level monitoring or SRTs performed; 
+                              if stormwater tree, no CET; 
+                              if porous pavement, no test within the past two years.
+                              ")
                            ),
                            mainPanel(
                                 DTOutput("unmonitored_table")
                                 ) 
                   ), 
                   tabPanel("Deny List", value = "deny_tab", 
-                           titlePanel("SMPs Denied Monitoring (to be excluded from main tab)"),
+                           titlePanel("SMPs Denied Monitoring (a.k.a. SMPs Excluded from the Main Tab)"),
                            sidebarPanel(selectizeInput("smp_id", "SMP ID", choices = NULL, 
                                                        options = list(
                                                            placeholder = 'Select an Option', 
@@ -129,7 +137,7 @@ server <- function(input, output, session) {
             if(input$exclude_future == TRUE){
                 paste("unmonitored_sites_with_future_deployments_excluded_", Sys.Date(), ".csv", sep = "")
             }else{
-                paste("future_deployments_", Sys.Date(), ".csv", sep = "") 
+                paste("unmonitored_sites_", Sys.Date(), ".csv", sep = "") 
             }
         }, 
         content = function(file){
@@ -172,12 +180,22 @@ server <- function(input, output, session) {
     observe(updateActionButton(session, "add_smp", label = rv$label()))
     
     #toggle state of remove based on whether row is selected
-    observe(toggleState(id = "remove_smp", condition = length(input$deny_table_rows_selected) != 0))
+    observe(toggleState(id = "remove_smp", condition = input$smp_id %in% rv$deny_db()$smp_id))
     
     #update values based on selected row 
     observeEvent(input$deny_table_rows_selected, {
         updateSelectizeInput(session, "smp_id", selected = rv$deny_db()$smp_id[input$deny_table_rows_selected])
-        updateTextAreaInput(session, "reason", value = rv$deny_db()$reason[input$deny_table_rows_selected])
+        #updateTextAreaInput(session, "reason", value = rv$deny_db()$reason[input$deny_table_rows_selected])
+    })
+    
+    observeEvent(input$smp_id, {
+        updateTextAreaInput(session, "reason", value = character(0))
+        if(input$smp_id %in% rv$deny_db()$smp_id){
+            rv$update_reason_index <- which(rv$deny_db()$smp_id == input$smp_id)
+            print(rv$update_reason_index)
+            rv$update_reason <- rv$deny_db()$reason[rv$update_reason_index]
+            updateTextAreaInput(session, "reason", value = rv$update_reason)
+        }
     })
     
     #add to deny list
@@ -209,7 +227,8 @@ server <- function(input, output, session) {
     #remove from deny list
     observeEvent(input$remove_smp, {
         showModal(modalDialog(title = "Remove from Deny List", 
-                              "Are you sure you want to remove this SMP from the deny list?", 
+                              paste("Are you sure you want to remove SMP", 
+                                    input$smp_id, "from the deny list?"), 
                               modalButton("No"), 
                               actionButton("confirm_removal", "Yes")))
     })
@@ -217,8 +236,8 @@ server <- function(input, output, session) {
     #confirm removal
     observeEvent(input$confirm_removal, {
         dbGetQuery(poolConn, 
-                   paste0("DELETE FROM fieldwork.monitoring_deny_list WHERE monitoring_deny_list_uid = '",
-                          rv$deny_db()[input$deny_table_rows_selected, 1], "'"))
+                   paste0("DELETE FROM fieldwork.monitoring_deny_list WHERE smp_id = '",
+                          input$smp_id, "'"))
         
         #update deny table
         rv$deny_db <- reactive(dbGetQuery(poolConn, rv$deny_query()))
