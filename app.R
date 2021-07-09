@@ -1,7 +1,8 @@
 #Unmonitored SMPs
 #Show all unmonitored active SMPs, along with a "Deny List"
 
-#load libraries ----
+
+#0.0 load libraries ----
     #shiny
     library(shiny)
     #shiny themes for color 
@@ -20,7 +21,7 @@
     library(shinyjs)
 
 
-#set up----
+#0.1 set up----
     options(stringsAsFactors=FALSE)
     
     #set default page length for datatables
@@ -39,7 +40,7 @@
     #js warning about leaving page
     jscode <- 'window.onbeforeunload = function() { return "Please use the button on the webpage"; };'
 
-#global variables and functions ----
+#0.2 global variables and functions ----
     #query SMPs that have not been monitored 
     smp <- dbGetQuery(poolConn, "with cwl_smp AS (
              SELECT DISTINCT deployment_full_cwl.smp_id
@@ -62,10 +63,12 @@
         
     }
 
-# Define UI
+# 1.0 UI --------
 ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean"),
+                  #1.1 Unmonitored Active SMPs -------
                   tabPanel("Unmonitored Active SMPs", value = "main_tab", 
                            titlePanel("Unmonitored Active SMPs"),
+                           #1.1.1 sidebarPanel ------
                            sidebarPanel(checkboxInput("exclude_future", "Exclude SMPs with Future Deployments?"), 
                            downloadButton("download", label = "Download"), 
                            h5("This query looks for SMPs that meeting the following criteria:
@@ -77,12 +80,15 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean")
                               if porous pavement, no test within the past two years.
                               ")
                            ),
+                           #1.1.2 table ---------
                            mainPanel(
                                 DTOutput("unmonitored_table")
                                 ) 
                   ), 
+                  #1.2 Deny List ----------
                   tabPanel("Deny List", value = "deny_tab", 
                            titlePanel("SMPs Denied Monitoring (a.k.a. SMPs Excluded from the Main Tab)"),
+                           #1.2.1 sidebarPanel ---------
                            sidebarPanel(selectizeInput("smp_id", "SMP ID", choices = NULL, 
                                                        options = list(
                                                            placeholder = 'Select an Option', 
@@ -91,6 +97,7 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean")
                                         textAreaInput("reason", "Reason", height = '85px'), 
                                         actionButton("add_smp", "Add SMP to Deny List"), 
                                         disabled(actionButton("remove_smp", "Remove SMP from Deny List"))), 
+                           #1.2.2 tables ------
                            mainPanel(
                            DTOutput("deny_table")
                            ), 
@@ -99,12 +106,15 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean")
                   )
 )
 
+#2.0 server --------
 # Define server logic
 server <- function(input, output, session) {
 
+    #2.0 set up -----
     rv <- reactiveValues()
     
-    #unmonitored tab -----
+    #2.1 unmonitored tab -----
+    #2.1.1 query and show table -------
     rv$unmonitored_query <- reactive(if(input$exclude_future == FALSE){
         "select * from fieldwork.unmonitored_active_smps"
     }else{
@@ -131,7 +141,7 @@ server <- function(input, output, session) {
         rownames = FALSE
     )
     
-    
+    #2.1.2 download --------
     output$download <- downloadHandler(
         filename = function(){
             if(input$exclude_future == TRUE){
@@ -146,11 +156,12 @@ server <- function(input, output, session) {
     )
     
     
-    #deny tab----
+    #2.2 deny tab----
     
-    #updates system ids
+    #2.2.1 updates system ids ----
     updateSelectizeInput(session, "smp_id", choices = smp, selected = character(0), server = TRUE)
     
+    #2.2.2 query and show table -------
     rv$deny_query <- reactive("select * from fieldwork.monitoring_deny_list order by smp_id")
     
     rv$deny_db <- reactive(dbGetQuery(poolConn, rv$deny_query()))
@@ -167,11 +178,13 @@ server <- function(input, output, session) {
         rownames = FALSE
     )
     
+    #2.2.3 prepare inputs ------
     #process text field to prevent sql injection
     rv$reason_step <- reactive(gsub('\'', '\'\'', input$reason))
     rv$reason_step_two <- reactive(special_char_replace(rv$reason_step()))
     rv$reason <- reactive(if(nchar(rv$reason_step_two()) == 0) "NULL" else paste0("'", rv$reason_step_two(), "'"))
     
+    #2.2.4 toggle states ----
     #toggle state of add/edit based on whether SMP ID and Reason fields are selected
     observe(toggleState(id = "add_smp", condition = nchar(input$smp_id) > 0 & nchar(input$reason) > 0))
     
@@ -182,6 +195,7 @@ server <- function(input, output, session) {
     #toggle state of remove based on whether row is selected
     observe(toggleState(id = "remove_smp", condition = input$smp_id %in% rv$deny_db()$smp_id))
     
+    #2.2.4 editing ------
     #update values based on selected row 
     observeEvent(input$deny_table_rows_selected, {
         updateSelectizeInput(session, "smp_id", selected = rv$deny_db()$smp_id[input$deny_table_rows_selected])
@@ -198,6 +212,7 @@ server <- function(input, output, session) {
         }
     })
     
+    #2.2.5 click button/add -----------
     #add to deny list
     observeEvent(input$add_smp, {
         if(!(input$smp_id %in% rv$deny_db()$smp_id)){
@@ -224,6 +239,7 @@ server <- function(input, output, session) {
         reset("reason")
     })
     
+    #2.2.6 delete------
     #remove from deny list
     observeEvent(input$remove_smp, {
         showModal(modalDialog(title = "Remove from Deny List", 
@@ -253,6 +269,7 @@ server <- function(input, output, session) {
     })
     
 }
-
+    
+#3.0 run App --------
 # Run the application 
 shinyApp(ui = ui, server = server)
