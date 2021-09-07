@@ -30,7 +30,7 @@
     #set db connection
     #using a pool connection so separate connections are unified
     #gets environmental variables saved in local or pwdrstudio environment
-    poolConn <- dbPool(odbc(), dsn = "mars_testing", uid = Sys.getenv("shiny_uid"), pwd = Sys.getenv("shiny_pwd"))
+    poolConn <- dbPool(odbc(), dsn = "mars_data", uid = Sys.getenv("new_shiny_uid"), pwd = Sys.getenv("shiny_pwd"))
     
     #disconnect from db on stop 
     onStop(function(){
@@ -46,7 +46,7 @@
              SELECT DISTINCT deployment_full_cwl.smp_id
                FROM fieldwork.deployment_full_cwl
     	)
-    select distinct sbd.smp_id from greenit_smpbestdata sbd  where NOT (EXISTS ( SELECT cs.smp_id
+    select distinct sbd.smp_id from external.smpbdv sbd  where NOT (EXISTS ( SELECT cs.smp_id
                FROM cwl_smp cs
               WHERE cs.smp_id = sbd.smp_id)) 
     		  order by sbd.smp_id")  %>% 
@@ -206,7 +206,6 @@ server <- function(input, output, session) {
         updateTextAreaInput(session, "reason", value = character(0))
         if(input$smp_id %in% rv$deny_db()$smp_id){
             rv$update_reason_index <- which(rv$deny_db()$smp_id == input$smp_id)
-            print(rv$update_reason_index)
             rv$update_reason <- rv$deny_db()$reason[rv$update_reason_index]
             updateTextAreaInput(session, "reason", value = rv$update_reason)
         }
