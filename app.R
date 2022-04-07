@@ -72,7 +72,7 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean")
                            sidebarPanel(checkboxInput("exclude_future", "Exclude SMPs with Future Deployments?"), 
                            downloadButton("download", label = "Download"), 
                            h5("This query looks for SMPs that meeting the following criteria:
-                              a CAPIT Status of Construction-Substantially Complete or Closed;
+                              PWD is responsible for surface, subsurface, and/or porous maintenance;
                               SMP is not \"not built\" or \"retired\";
                               no inactive or plugged inlets, structures, or conveyance;
                               no continuous water level monitoring or SRTs performed; 
@@ -116,9 +116,9 @@ server <- function(input, output, session) {
     #2.1 unmonitored tab -----
     #2.1.1 query and show table -------
     rv$unmonitored_query <- reactive(if(input$exclude_future == FALSE){
-        "select * from fieldwork.unmonitored_active_smps"
+        "select * from fieldwork.mat_unmonitored_active_smps"
     }else{
-        "select * from fieldwork.unmonitored_active_smps uas
+        "select * from fieldwork.mat_unmonitored_active_smps uas
         where not exists (select fdf.smp_id 
                           from fieldwork.future_deployments_full fdf
                           where fdf.smp_id = uas.smp_id)"
