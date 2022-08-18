@@ -1,4 +1,7 @@
-#0.0 load libraries ----
+
+#Script to manipulate the unmonitoed query, add con-phase to cwl and filter out post con data
+#Author: Farshad Ebrahimi, Last modified: 8/18/2022
+
 #shiny
 library(shiny)
 #shiny themes for color 
@@ -26,11 +29,12 @@ con <- dbConnect(odbc(), dsn = "mars_testing")
 con_pg12 <- dbConnect(odbc(), dsn = "mars_data")
 
 
-#Write queris to gather tables
+#Write queries to populate the data tables
 
 cwl_smp <- dbGetQuery(con,"SELECT DISTINCT *
            FROM fieldwork.deployment_full_cwl")
 
+# Construction phase dates for smps
 external.cipit_project <- dbGetQuery(con_pg12, "SELECT * FROM external.cipit_project")
 
 external.smpbdv <- dbGetQuery(con_pg12, "SELECT * FROM  external.smpbdv")
@@ -42,6 +46,8 @@ smp_milestones <- smp_milestones %>%
 
 conphase <- data.frame(phase_uid = 1:4, phase = c("Pre-Construction", "Construction", "Post-Construction", "Unknown"))
 
+
+#A loop to populate the con-phase for each CWL deployment
 #setting the lookup_id's default in smpmilestone to 4
 
 
@@ -133,7 +139,7 @@ cwl_smp <- smp_milestones %>%
   distinct()
 
 
-#adding the con-phase
+# run the old query to populate unmonitored sites, separately get the srt, inavalid-inlet and cwl data and change the queries to avoid filtering based on these (reserved for R for further manipulation at the end)
 
 cwl_system <- dbGetQuery(con,"SELECT DISTINCT smp_to_system(deployment_full_cwl.smp_id::character varying) AS system_id
            FROM fieldwork.deployment_full_cwl")
@@ -330,7 +336,7 @@ output <- dbGetQuery(con,"WITH inactive_inlets AS (
   ORDER BY gbi.smp_id;" )
 
 
-##write a query to do what the materilized view mat_unmonitored_active_smps does
+##script to create the same table as the shiny app, now we can play around with the CWL and SRT, they both have con-phase
 
 
   output_filtered <- output %>% 
