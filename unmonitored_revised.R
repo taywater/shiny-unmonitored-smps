@@ -2,6 +2,7 @@
 #Script to manipulate the unmonitoed query, add con-phase to cwl and filter out post con data
 #Author: Farshad Ebrahimi, Last modified: 8/18/2022
 
+#load libraries
 #shiny
 library(shiny)
 #shiny themes for color 
@@ -24,13 +25,13 @@ library(dplyr)
 library(lubridate)
 #create negate of %in%
 `%!in%` = Negate(`%in%`)
+
 #connection
 con <- dbConnect(odbc(), dsn = "mars_testing")
 con_pg12 <- dbConnect(odbc(), dsn = "mars_data")
 
 
 #Write queries to populate the data tables
-
 cwl_smp <- dbGetQuery(con,"SELECT DISTINCT *
            FROM fieldwork.deployment_full_cwl")
 
@@ -49,9 +50,7 @@ conphase <- data.frame(phase_uid = 1:4, phase = c("Pre-Construction", "Construct
 
 #A loop to populate the con-phase for each CWL deployment
 #setting the lookup_id's default in smpmilestone to 4
-
-
-  smp_milestones['phase_lookup_uid'] <- 4
+smp_milestones['phase_lookup_uid'] <- 4
   
   for(i in 1:nrow(smp_milestones)) {
     
@@ -140,7 +139,6 @@ cwl_smp <- smp_milestones %>%
 
 
 # run the old query to populate unmonitored sites, separately get the srt, inavalid-inlet and cwl data and change the queries to avoid filtering based on these (reserved for R for further manipulation at the end)
-
 cwl_system <- dbGetQuery(con,"SELECT DISTINCT smp_to_system(deployment_full_cwl.smp_id::character varying) AS system_id
            FROM fieldwork.deployment_full_cwl")
 
@@ -337,15 +335,15 @@ output <- dbGetQuery(con,"WITH inactive_inlets AS (
 
 
 ##script to create the same table as the shiny app, now we can play around with the CWL and SRT, they both have con-phase
-
-
   output_filtered <- output %>% 
     filter(smp_id %!in% cwl_smp$smp_id &
              system_id %!in% srt_systems$system_id &
              system_id %!in% inactive_inlets$system_id) %>%
     select(-system_id) %>%
     distinct()
-
+  
+dbDisconnect(con)
+dbDisconnect(con_pg12)
 
 
 
