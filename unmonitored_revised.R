@@ -149,7 +149,11 @@ srt_systems <-dbGetQuery(con,"SELECT DISTINCT *
 
 all_inlets <- dbGetQuery(con,"SELECT * from fieldwork.all_inlets")
 
+<<<<<<< HEAD
 #query to get un-filtered output
+=======
+
+>>>>>>> 5872c8eeafcdb7a40e2202fd4e2706d13a5c6952
 output <- dbGetQuery(con,"WITH greenit_built_info AS (
          SELECT greenit_smpbestdata.smp_id,
             greenit_smpbestdata.system_id,
@@ -183,7 +187,11 @@ output <- dbGetQuery(con,"WITH greenit_built_info AS (
   ORDER BY gbi.smp_id;" )
 
 
+<<<<<<< HEAD
 ##script to create similar table as the shiny app, now we can play around with filtering
+=======
+##script to create the same table as the shiny app, now we can play around with the CWL and SRT, they both have con-phase
+>>>>>>> 5872c8eeafcdb7a40e2202fd4e2706d13a5c6952
  cwl_smp <- cwl_smp %>% 
    filter(phase == "Post-Construction")
  
@@ -196,7 +204,11 @@ output <- dbGetQuery(con,"WITH greenit_built_info AS (
  online_inlets <- all_inlets %>% 
    filter(plug_status == "ONLINE") %>%
    select(smp_id)
+<<<<<<< HEAD
  #smps that do not show up in all_inlet
+=======
+ 
+>>>>>>> 5872c8eeafcdb7a40e2202fd4e2706d13a5c6952
  no_inlets <- dbGetQuery(con, "with cwl_smp AS (
              SELECT DISTINCT deployment_full_cwl.smp_id
                FROM fieldwork.deployment_full_cwl
@@ -206,7 +218,11 @@ output <- dbGetQuery(con,"WITH greenit_built_info AS (
               WHERE cs.smp_id = sbd.smp_id)) 
     		  order by sbd.smp_id") %>% 
    anti_join(all_inlets, by="smp_id")
+<<<<<<< HEAD
  #cobinte online + no-inlet for final filtering
+=======
+ 
+>>>>>>> 5872c8eeafcdb7a40e2202fd4e2706d13a5c6952
  allowed_smp_inletbased <- union_all(online_inlets, no_inlets) %>%
    distinct()
 
