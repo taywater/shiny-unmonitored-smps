@@ -27,14 +27,55 @@ library(lubridate)
 
 #connections
 con <- dbConnect(odbc(), dsn = "mars_testing")
-con_pg12 <- dbConnect(odbc(), dsn = "mars_data")
 
+###Taylor: You shouldn't need to make use of the pg12 DB at all for this
+###All the info you're accessing from the pg12 db is available in pg9
+###However, as I'll say shortly, your construction phase process below is far too complicated for the benefit you'll get from it
+###For reference, though, CIPIT projects are in the public.cipit_project foreign table in pg9
+###And the GreenIT SMP Best Data View is the public.greenit_smpbestdata foreign table in pg9
+
+con_pg12 <- dbConnect(odbc(), dsn = "mars_data") 
 
 #Write queries to populate cwl data tables
 cwl_smp <- dbGetQuery(con,"SELECT DISTINCT *
-           FROM fieldwork.deployment_full_cwl")
+           FROM fieldwork.deployment_full_cwl")###Taylor: This contains only CWL deployments. 
+  ###fieldwork.deployment_full contains deployments from SRTs as well
 
 # Construction phase dates for smps
+############################################
+###Taylor: This is how I would attach construction phases to deployments if I knew there were 
+  ###lots of deployments in each phase category
+###And if I knew there were no easy shortcuts for how determining which deployments belonged to which category
+##hHowever, neither of those factors holds true for this project. I'll elaborate:
+
+###In the first case, the vast, vast majority of our deployments take place in a post-construction setting.
+###Of the thousands of deployment records in the deployment tables, I'd expect perhaps a few dozen 
+  ###to be mid-construction, and even fewer pre
+###Second, the only mid-construction monitoring we've done has been a few liner acceptance test SRTs,
+  ###all of which are tagged with mid-construction phases in the SRT table
+###And all of the pre-construction monitoring would be at groundwater wells, and those might not even have
+  ###SMP IDs attached. Pre-construction groundwater monitoring takes place even before SMP IDs have been chosen
+
+###Given these factors, I'd approach this with a default assumption fopr the phase, and then rules by which
+  ###that default Was overwritten by other phases
+###I call this the "No cemeteries for alive people" approach.
+###We don't need special treatment for the default condition - we can take advantage of that default in our code
+
+###Namely, since almost all of our deployments are post-construction, I would search the SRT tables dor all
+  ###Tests whose phase <> 'Post-Construction' (49 by my count in fieldwork.srt_full) and filter the
+  ###Fieldwork.deployment_full (NOT fieldwork.deployment_full_cwl) to only those deployments at those systems
+  ###And then, filter those deployments to only those on those test dates
+###Those are your only mid-construction deployments
+
+###Then, I'd look up all deployments in that same table whose site_name_lookup_uid is not null
+  ###These are the sites that aren't SMPs (either public or private)
+  ###They are either pre-construction groundwater monitoring, special investigations at wastewater treatment plants
+  ###Or something else. Billy could elaborate on the scenarios where these deployments get made
+###Regardless, though, these depoyments are all irrelevant to our current project
+  ###Because they will never be relevant to a site being made unavailable for monitring
+  ###(Either they are not at an SMP, or they happened pre-construction)
+  ###So, in this case, we can just mark all of these deployments as "NA" construction phase
+
 external.cipit_project <- dbGetQuery(con_pg12, "SELECT * FROM external.cipit_project")
 
 external.smpbdv <- dbGetQuery(con_pg12, "SELECT * FROM  external.smpbdv")
@@ -136,6 +177,8 @@ cwl_smp <- smp_milestones %>%
   select(smp_id,system_id,phase) %>%
   distinct()
 
+###########################################
+
 #get the maintenance status and all online inlets from Taylor's new data structure, along with cwl and srt systems
 gso_info <- dbGetQuery(con,"select * from fieldwork.gso_maintenance")
 
@@ -150,6 +193,11 @@ all_inlets <- dbGetQuery(con,"SELECT * from fieldwork.all_inlets")
 
 #query to get un-filtered output to later filter with the new criteria and tables
 
+###Taylor: This is how the DB currently does it.
+  ###We might want to break this up into more data structures too, so we can expose the exclusion criteria better
+  ###That is to say, this query just doesn't show sites with CET, or sites with PPSIRT within two years
+  ###We might, someday, want to have app controls to show or hide those sites, in which case this query wouldn't work
+  ###It's alright for now, though
 output <- dbGetQuery(con,"WITH greenit_built_info AS (
          SELECT greenit_smpbestdata.smp_id,
             greenit_smpbestdata.system_id,
@@ -200,6 +248,10 @@ output <- dbGetQuery(con,"WITH greenit_built_info AS (
    select(smp_id)
 
  #smps that do not show up in all_inlet will be here; Taylor can you confirm this?
+ ###Taylor: Online SMPs with no inlets should be the anti join of gso_info$maintained == 1 and online_inlets
+ ###If we've monitored any of those SMPs, their IDs will appear in fieldwork.deployment_full or srt_full
+ ###I don't think we need to explicitly select for SMPs with no inlets
+ 
  no_inlets <- dbGetQuery(con, "with cwl_smp AS (
              SELECT DISTINCT deployment_full_cwl.smp_id
                FROM fieldwork.deployment_full_cwl
