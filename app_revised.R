@@ -37,52 +37,51 @@
     
     #set db connection
     #gets environmental variables saved in local or pwdrstudio environment
-    con <- dbConnect(odbc::odbc(), dsn = "mars_testing", uid = Sys.getenv("shiny_uid_pg9_admin"), pwd = Sys.getenv("shiny_pwd_pg9_admin"))
-    
+    con <- dbConnect(odbc::odbc(), dsn = "mars14_data", uid = Sys.getenv("shiny_uid"), pwd = Sys.getenv("shiny_pwd"), MaxLongVarcharSize = 8190  )
     #js warning about leaving page
     jscode <- 'window.onbeforeunload = function() { return "Please use the button on the webpage"; };'
 
 #0.2 global variables and functions plus exclusion/incluion lists for unmonitored sites ----
     #query SMPs that have not been monitored 
     smp <- dbGetQuery(con, "with cwl_smp AS (
-             SELECT DISTINCT deployment_full_cwl.smp_id
-               FROM fieldwork.deployment_full_cwl
+             SELECT DISTINCT fieldwork.viw_deployment_full_cwl.smp_id
+               FROM fieldwork.viw_deployment_full_cwl
     	)
-    select distinct sbd.smp_id from greenit_smpbestdata sbd  where NOT (EXISTS ( SELECT cs.smp_id
+    select distinct sbd.smp_id from external.tbl_smpbdv sbd  where NOT (EXISTS ( SELECT cs.smp_id
                FROM cwl_smp cs
               WHERE cs.smp_id = sbd.smp_id)) 
     		  order by sbd.smp_id")  %>% 
-        dplyr::arrange(smp_id) %>% 
-        dplyr::pull()
+      dplyr::arrange(smp_id) %>% 
+      dplyr::pull()
     
-    fieldwork.monitoring_deny_list <- dbGetQuery(con,"SELECT * FROM fieldwork.monitoring_deny_list")
-    fieldwork.capture_efficiency <- dbGetQuery(con,"SELECT system_id FROM fieldwork.capture_efficiency")
-    fieldwork.porous_pavement <- dbGetQuery(con,"select * from fieldwork.porous_pavement") %>%
+    fieldwork.tbl_monitoring_deny_list <- dbGetQuery(con,"SELECT * FROM fieldwork.tbl_monitoring_deny_list")
+    fieldwork.tbl_capture_efficiency <- dbGetQuery(con,"SELECT system_id FROM fieldwork.tbl_capture_efficiency")
+    fieldwork.tbl_porous_pavement <- dbGetQuery(con,"select * from fieldwork.tbl_porous_pavement") %>%
       filter(test_date > now()-years(2))
-    online_inlets <- dbGetQuery(con,"SELECT * from fieldwork.all_inlets") %>%
+    online_inlets <- dbGetQuery(con,"SELECT * from fieldwork.viw_all_inlets") %>%
       filter(plug_status == "ONLINE") %>%
       select(smp_id)
-    greenit_built_info <- dbGetQuery(con,"SELECT greenit_smpbestdata.smp_id,
-            greenit_smpbestdata.system_id,
-            greenit_smpbestdata.smp_notbuiltretired,
-            greenit_smpbestdata.smp_smptype,
-            greenit_smpbestdata.capit_status
-           FROM greenit_smpbestdata
-          WHERE greenit_smpbestdata.smp_notbuiltretired IS NULL AND greenit_smpbestdata.smp_smptype <> 'Depaving'::text")
+    greenit_built_info <- dbGetQuery(con,"SELECT external.tbl_smpbdv.smp_id,
+            external.tbl_smpbdv.system_id,
+            external.tbl_smpbdv.smp_notbuiltretired,
+            external.tbl_smpbdv.smp_smptype,
+            external.tbl_smpbdv.capit_status
+           FROM external.tbl_smpbdv
+          WHERE external.tbl_smpbdv.smp_notbuiltretired IS NULL AND external.tbl_smpbdv.smp_smptype <> 'Depaving'::text")
     greenit_built_info_stromwatertree <- greenit_built_info %>%
       filter(smp_smptype == "Stormwater Tree")
     srt_systems <-dbGetQuery(con,"SELECT DISTINCT *
-           FROM fieldwork.srt_full")
+           FROM fieldwork.viw_srt_full")
     cwl_smp <- dbGetQuery(con,"SELECT DISTINCT *
-           FROM fieldwork.deployment_full_cwl")
+           FROM fieldwork.viw_deployment_full_cwl")
     fieldwork.deployment_full <- dbGetQuery(con,"SELECT *
-           FROM fieldwork.deployment_full")
-    cwl_system <- dbGetQuery(con,"SELECT DISTINCT smp_to_system(deployment_full_cwl.smp_id::character varying) AS system_id
-           FROM fieldwork.deployment_full_cwl")
-    gso_info <- dbGetQuery(con,"select * from fieldwork.gso_maintenance")%>% 
+           FROM fieldwork.viw_deployment_full")
+    cwl_system <- dbGetQuery(con,"SELECT DISTINCT admin.fun_smp_to_system(fieldwork.viw_deployment_full_cwl.smp_id::text) AS system_id
+           FROM fieldwork.viw_deployment_full_cwl")
+    gso_info <- dbGetQuery(con,"select * from external.viw_gso_maintenance")%>% 
       filter(maintained == 1) %>%
       select(smp_id)
-    fieldwork.future_deployments_full <- dbGetQuery(con, "select * from fieldwork.future_deployments_full")
+    fieldwork.viw_future_deployments_full <- dbGetQuery(con, "select * from fieldwork.viw_future_deployments_full")
     #Maintained and online smp list
     maintained_online_smp <- union_all(online_inlets, gso_info) %>%
       distinct()
@@ -96,15 +95,15 @@
       filter(smp_id %in% maintained_online_smp$smp_id &
                smp_id %!in%  cwl_smp$smp_id &
                system_id %!in% srt_systems$system_id &
-               smp_id %!in% fieldwork.monitoring_deny_list$smp_id &
-               greenit_built_info_stromwatertree$system_id %!in% fieldwork.capture_efficiency$system_id &
-               smp_id %!in% fieldwork.porous_pavement$smp_id) %>%
+               smp_id %!in% fieldwork.tbl_monitoring_deny_list$smp_id &
+               greenit_built_info_stromwatertree$system_id %!in% fieldwork.tbl_capture_efficiency$system_id &
+               smp_id %!in% fieldwork.tbl_porous_pavement$smp_id) %>%
       select(-system_id) %>%
       distinct()
     
     #just future deployment on
     output_table_2 <- output_table_1 %>%
-      filter(smp_id %!in% fieldwork.future_deployments_full$smp_id)
+      filter(smp_id %!in% fieldwork.viw_future_deployments_full$smp_id)
     
     #both check boxes on
     non_post_con_list <- srt_systems %>%
@@ -124,10 +123,10 @@
       filter(smp_id %in% maintained_online_smp$smp_id &
                smp_id %!in%  cwl_smp$smp_id &
                system_id %!in% srt_systems$system_id &
-               smp_id %!in% fieldwork.monitoring_deny_list$smp_id &
-               greenit_built_info_stromwatertree$system_id %!in% fieldwork.capture_efficiency$system_id &
-               smp_id %!in% fieldwork.porous_pavement$smp_id &
-               smp_id %!in% fieldwork.future_deployments_full$smp_id) %>%
+               smp_id %!in% fieldwork.tbl_monitoring_deny_list$smp_id &
+               greenit_built_info_stromwatertree$system_id %!in% fieldwork.tbl_capture_efficiency$system_id &
+               smp_id %!in% fieldwork.tbl_porous_pavement$smp_id &
+               smp_id %!in% fieldwork.viw_future_deployments_full$smp_id) %>%
       select(-system_id) %>%
       distinct()
     
@@ -139,9 +138,9 @@
       filter(smp_id %in% maintained_online_smp$smp_id &
                smp_id %!in%  cwl_smp$smp_id &
                system_id %!in% srt_systems$system_id &
-               smp_id %!in% fieldwork.monitoring_deny_list$smp_id &
-               greenit_built_info_stromwatertree$system_id %!in% fieldwork.capture_efficiency$system_id &
-               smp_id %!in% fieldwork.porous_pavement$smp_id) %>%
+               smp_id %!in% fieldwork.tbl_monitoring_deny_list$smp_id &
+               greenit_built_info_stromwatertree$system_id %!in% fieldwork.tbl_capture_efficiency$system_id &
+               smp_id %!in% fieldwork.tbl_porous_pavement$smp_id) %>%
       select(-system_id) %>%
       distinct()
 
@@ -255,7 +254,7 @@ server <- function(input, output, session) {
     updateSelectizeInput(session, "smp_id", choices = smp, selected = character(0), server = TRUE)
     
     #2.2.2 query and show table -------
-    rv$deny_query <- reactive("select * from fieldwork.monitoring_deny_list order by smp_id")
+    rv$deny_query <- reactive("select * from fieldwork.tbl_monitoring_deny_list order by smp_id")
     
     rv$deny_db <- reactive(dbGetQuery(con, rv$deny_query()))
     
@@ -309,13 +308,13 @@ server <- function(input, output, session) {
     #add to deny list
     observeEvent(input$add_smp, {
         if(!(input$smp_id %in% rv$deny_db()$smp_id)){
-            add_smp_query <- paste0("INSERT INTO fieldwork.monitoring_deny_list (smp_id, reason)
+            add_smp_query <- paste0("INSERT INTO fieldwork.tbl_monitoring_deny_list (smp_id, reason)
                                     VALUES('", input$smp_id, "', ", rv$reason(), ")")
             
             dbGetQuery(con, add_smp_query)
         }else{
             edit_smp_query <- paste0(
-                "UPDATE fieldwork.monitoring_deny_list SET 
+                "UPDATE fieldwork.tbl_monitoring_deny_list SET 
                 reason = ", rv$reason(), "
                 WHERE smp_id = '", input$smp_id, "'")
             
@@ -345,7 +344,7 @@ server <- function(input, output, session) {
     #confirm removal
     observeEvent(input$confirm_removal, {
         dbGetQuery(con, 
-                   paste0("DELETE FROM fieldwork.monitoring_deny_list WHERE smp_id = '",
+                   paste0("DELETE FROM fieldwork.tbl_monitoring_deny_list WHERE smp_id = '",
                           input$smp_id, "'"))
         
         #update deny table
