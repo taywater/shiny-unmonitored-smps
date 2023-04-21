@@ -1,6 +1,6 @@
 #Unmonitored SMPs
 #Show all unmonitored active SMPs, along with a "Deny List"
-# Revised by Farshad Ebrahimi on 8/24/2022
+# Revised by Farshad Ebrahimi on 4/21/2022
 
 
 #0.0 load libraries ----
@@ -25,6 +25,11 @@
     library(dplyr)
     #lubridate
     library(lubridate)
+    #download as excel
+    library(openxlsx)
+    #reactable
+    library(reactable)
+
     #create negate of %in%
     `%!in%` = Negate(`%in%`)
   
@@ -37,13 +42,18 @@
     
     #set db connection
     #gets environmental variables saved in local or pwdrstudio environment
-    con <- dbConnect(odbc::odbc(), dsn = "mars14_data", uid = Sys.getenv("shiny_uid"), pwd = Sys.getenv("shiny_pwd"), MaxLongVarcharSize = 8190  )
+    poolConn <- dbPool(odbc(), dsn = "mars14_data", uid = Sys.getenv("shiny_uid"), pwd = Sys.getenv("shiny_pwd"))
+    
+    #disconnect from db on stop 
+    onStop(function(){
+      poolClose(poolConn)
+    })
     #js warning about leaving page
     jscode <- 'window.onbeforeunload = function() { return "Please use the button on the webpage"; };'
 
 #0.2 global variables and functions plus exclusion/incluion lists for unmonitored sites ----
     #query SMPs that have not been monitored 
-    smp <- dbGetQuery(con, "with cwl_smp AS (
+    smp <- dbGetQuery(poolConn, "with cwl_smp AS (
              SELECT DISTINCT fieldwork.viw_deployment_full_cwl.smp_id
                FROM fieldwork.viw_deployment_full_cwl
     	)
@@ -54,95 +64,56 @@
       dplyr::arrange(smp_id) %>% 
       dplyr::pull()
     
-    fieldwork.tbl_monitoring_deny_list <- dbGetQuery(con,"SELECT * FROM fieldwork.tbl_monitoring_deny_list")
-    fieldwork.tbl_capture_efficiency <- dbGetQuery(con,"SELECT system_id FROM fieldwork.tbl_capture_efficiency")
-    fieldwork.tbl_porous_pavement <- dbGetQuery(con,"select * from fieldwork.tbl_porous_pavement") %>%
-      filter(test_date > now()-years(2))
-    online_inlets <- dbGetQuery(con,"SELECT * from fieldwork.viw_all_inlets") %>%
-      filter(plug_status == "ONLINE") %>%
-      select(smp_id)
-    greenit_built_info <- dbGetQuery(con,"SELECT external.tbl_smpbdv.smp_id,
-            external.tbl_smpbdv.system_id,
-            external.tbl_smpbdv.smp_notbuiltretired,
-            external.tbl_smpbdv.smp_smptype,
-            external.tbl_smpbdv.capit_status
-           FROM external.tbl_smpbdv
-          WHERE external.tbl_smpbdv.smp_notbuiltretired IS NULL AND external.tbl_smpbdv.smp_smptype <> 'Depaving'::text")
-    greenit_built_info_stromwatertree <- greenit_built_info %>%
-      filter(smp_smptype == "Stormwater Tree")
-    srt_systems <-dbGetQuery(con,"SELECT DISTINCT *
-           FROM fieldwork.viw_srt_full")
-    cwl_smp <- dbGetQuery(con,"SELECT DISTINCT *
-           FROM fieldwork.viw_deployment_full_cwl")
-    fieldwork.deployment_full <- dbGetQuery(con,"SELECT *
-           FROM fieldwork.viw_deployment_full")
-    cwl_system <- dbGetQuery(con,"SELECT DISTINCT admin.fun_smp_to_system(fieldwork.viw_deployment_full_cwl.smp_id::text) AS system_id
-           FROM fieldwork.viw_deployment_full_cwl")
-    gso_info <- dbGetQuery(con,"select * from external.viw_gso_maintenance")%>% 
-      filter(maintained == 1) %>%
-      select(smp_id)
-    fieldwork.viw_future_deployments_full <- dbGetQuery(con, "select * from fieldwork.viw_future_deployments_full")
-    #Maintained and online smp list
-    maintained_online_smp <- union_all(online_inlets, gso_info) %>%
-      distinct()
+### There are two check boxes in the app, resulting on 4 different tables as output
     
-    #output tables generated here
-    #both check box off
-    output_table_1 <- greenit_built_info %>%
-      select(smp_id, system_id, smp_type = smp_smptype, capit_status ) %>%
+    #A view for each combo of checkboxes
+    unmonitored_smp_view_postcon_on <- dbGetQuery(poolConn, "SELECT * FROM fieldwork.viw_unmonitored_smp_one")
+    unmonitored_smp_view_both_on <- dbGetQuery(poolConn, "SELECT * FROM fieldwork.viw_unmonitored_smp_two")
+    unmonitored_smp_view_both_off <- dbGetQuery(poolConn, "SELECT * FROM fieldwork.viw_unmonitored_smp_three")
+    unmonitored_smp_view_future_on <- dbGetQuery(poolConn, "SELECT * FROM fieldwork.viw_unmonitored_smp_four")
+    
+    cwl_system <- dbGetQuery(poolConn,"SELECT DISTINCT admin.fun_smp_to_system(fieldwork.viw_deployment_full_cwl.smp_id::text) AS system_id FROM fieldwork.viw_deployment_full_cwl")
+  
+    
+####output tables generated here
+    #both check box off-means that SMPs with precon- and construction SRT and CWL records are considered as "Monitored SMP" and will not show in the app
+    #Also mean that SMPs with future deployment are included on the output, hence considered unmonitored
+    output_table_1 <- unmonitored_smp_view_both_off %>%
+      select(smp_id, system_id, smp_type, capit_status) %>%
       mutate("other_cwl_at_this_system" =  case_when(system_id %in% cwl_system$system_id ~ TRUE,
                                                      system_id %!in% cwl_system$system_id ~ FALSE)) %>%
-      filter(smp_id %in% maintained_online_smp$smp_id &
-               smp_id %!in%  cwl_smp$smp_id &
-               system_id %!in% srt_systems$system_id &
-               smp_id %!in% fieldwork.tbl_monitoring_deny_list$smp_id &
-               greenit_built_info_stromwatertree$system_id %!in% fieldwork.tbl_capture_efficiency$system_id &
-               smp_id %!in% fieldwork.tbl_porous_pavement$smp_id) %>%
       select(-system_id) %>%
       distinct()
     
     #just future deployment on
-    output_table_2 <- output_table_1 %>%
-      filter(smp_id %!in% fieldwork.viw_future_deployments_full$smp_id)
-    
-    #both check boxes on
-    non_post_con_list <- srt_systems %>%
-      filter(phase !="Post-Construction") 
-    fieldwork.deployment_full["system_id"] <- gsub('-\\d+$','',fieldwork.deployment_full$smp_id)
-    special_cases <- fieldwork.deployment_full %>%
-      inner_join(non_post_con_list, by=c("system_id"="system_id","deployment_dtime_est"="test_date"))
-    srt_systems <- srt_systems %>%
-      filter(phase =="Post-Construction")
-    cwl_smp <- cwl_smp %>%
-      anti_join(special_cases, by="deployment_uid")
-    
-    output_table_3 <- greenit_built_info %>%
-      select(smp_id, system_id, smp_type = smp_smptype, capit_status ) %>%
+    #same as the previous output, only excluding future deployment SMPs from the app    
+    output_table_2 <- unmonitored_smp_view_future_on %>%
+      select(smp_id, system_id, smp_type, capit_status) %>%
       mutate("other_cwl_at_this_system" =  case_when(system_id %in% cwl_system$system_id ~ TRUE,
                                                      system_id %!in% cwl_system$system_id ~ FALSE)) %>%
-      filter(smp_id %in% maintained_online_smp$smp_id &
-               smp_id %!in%  cwl_smp$smp_id &
-               system_id %!in% srt_systems$system_id &
-               smp_id %!in% fieldwork.tbl_monitoring_deny_list$smp_id &
-               greenit_built_info_stromwatertree$system_id %!in% fieldwork.tbl_capture_efficiency$system_id &
-               smp_id %!in% fieldwork.tbl_porous_pavement$smp_id &
-               smp_id %!in% fieldwork.viw_future_deployments_full$smp_id) %>%
+      select(-system_id) %>%
+      distinct()
+    
+    #both check boxes on
+    #SMPs with precon- and construction SRT and CWL records are considered as "Unmonitored SMP" and willshow in the app
+    #future deployments are excluded
+    output_table_3 <- unmonitored_smp_view_both_on %>%
+      select(smp_id, system_id, smp_type, capit_status) %>%
+      mutate("other_cwl_at_this_system" =  case_when(system_id %in% cwl_system$system_id ~ TRUE,
+                                                     system_id %!in% cwl_system$system_id ~ FALSE)) %>%
       select(-system_id) %>%
       distinct()
     
     #just postcon check box on
-    output_table_4 <- greenit_built_info %>%
-      select(smp_id, system_id, smp_type = smp_smptype, capit_status ) %>%
+    #SMPs with precon- and construction SRT and CWL records are considered as "Unmonitored SMP" and willshow in the app
+    #future deployments are not excluded
+    output_table_4 <- unmonitored_smp_view_postcon_on %>%
+      select(smp_id, system_id, smp_type, capit_status) %>%
       mutate("other_cwl_at_this_system" =  case_when(system_id %in% cwl_system$system_id ~ TRUE,
                                                      system_id %!in% cwl_system$system_id ~ FALSE)) %>%
-      filter(smp_id %in% maintained_online_smp$smp_id &
-               smp_id %!in%  cwl_smp$smp_id &
-               system_id %!in% srt_systems$system_id &
-               smp_id %!in% fieldwork.tbl_monitoring_deny_list$smp_id &
-               greenit_built_info_stromwatertree$system_id %!in% fieldwork.tbl_capture_efficiency$system_id &
-               smp_id %!in% fieldwork.tbl_porous_pavement$smp_id) %>%
       select(-system_id) %>%
       distinct()
+    
 
     #replace special characters with friendlier characters
     special_char_replace <- function(note){
@@ -153,7 +124,8 @@
         return(note_fix)
         
     }
-
+    
+    
 # 1.0 UI --------
 ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean"),
                   #1.1 Unmonitored Active SMPs -------
@@ -256,7 +228,7 @@ server <- function(input, output, session) {
     #2.2.2 query and show table -------
     rv$deny_query <- reactive("select * from fieldwork.tbl_monitoring_deny_list order by smp_id")
     
-    rv$deny_db <- reactive(dbGetQuery(con, rv$deny_query()))
+    rv$deny_db <- reactive(dbGetQuery(poolConn, rv$deny_query()))
     
     rv$deny <- reactive(rv$deny_db()%>% 
                             dplyr::select(-1) %>% 
@@ -311,20 +283,20 @@ server <- function(input, output, session) {
             add_smp_query <- paste0("INSERT INTO fieldwork.tbl_monitoring_deny_list (smp_id, reason)
                                     VALUES('", input$smp_id, "', ", rv$reason(), ")")
             
-            dbGetQuery(con, add_smp_query)
+            dbGetQuery(poolConn, add_smp_query)
         }else{
             edit_smp_query <- paste0(
                 "UPDATE fieldwork.tbl_monitoring_deny_list SET 
                 reason = ", rv$reason(), "
                 WHERE smp_id = '", input$smp_id, "'")
             
-            dbGetQuery(con, edit_smp_query)
+            dbGetQuery(poolConn, edit_smp_query)
         }
         
         #update deny table
-        rv$deny_db <- reactive(dbGetQuery(con, rv$deny_query()))
+        rv$deny_db <- reactive(dbGetQuery(poolConn, rv$deny_query()))
         #update main table with new/removed smp 
-        rv$unmonitored_sites_db <- reactive(dbGetQuery(con, rv$unmonitored_query()))
+        rv$unmonitored_sites_db <- reactive(dbGetQuery(poolConn, rv$unmonitored_query()))
         
         #clear fields
         reset("smp_id")
@@ -343,14 +315,14 @@ server <- function(input, output, session) {
     
     #confirm removal
     observeEvent(input$confirm_removal, {
-        dbGetQuery(con, 
+        dbGetQuery(poolConn, 
                    paste0("DELETE FROM fieldwork.tbl_monitoring_deny_list WHERE smp_id = '",
                           input$smp_id, "'"))
         
         #update deny table
-        rv$deny_db <- reactive(dbGetQuery(con, rv$deny_query()))
+        rv$deny_db <- reactive(dbGetQuery(poolConn, rv$deny_query()))
         #update main table with new/removed smp 
-        rv$unmonitored_sites_db <- reactive(dbGetQuery(con, rv$unmonitored_query()))
+        rv$unmonitored_sites_db <- reactive(dbGetQuery(poolConn, rv$unmonitored_query()))
         
         #clear fields
         reset("smp_id")
@@ -359,6 +331,8 @@ server <- function(input, output, session) {
         #remove pop up
         removeModal()
     })
+    
+    
     
 }
     
