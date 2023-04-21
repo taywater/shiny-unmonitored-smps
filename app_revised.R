@@ -67,10 +67,10 @@
 ### There are two check boxes in the app, resulting on 4 different tables as output
     
     #A view for each combo of checkboxes
-    unmonitored_smp_view_postcon_on <- dbGetQuery(poolConn, "SELECT * FROM fieldwork.viw_unmonitored_smp_one")
-    unmonitored_smp_view_both_on <- dbGetQuery(poolConn, "SELECT * FROM fieldwork.viw_unmonitored_smp_two")
-    unmonitored_smp_view_both_off <- dbGetQuery(poolConn, "SELECT * FROM fieldwork.viw_unmonitored_smp_three")
-    unmonitored_smp_view_future_on <- dbGetQuery(poolConn, "SELECT * FROM fieldwork.viw_unmonitored_smp_four")
+    unmonitored_smp_view_postcon_on <- dbGetQuery(poolConn, "SELECT * FROM fieldwork.viw_unmonitored_postcon_on")
+    unmonitored_smp_view_both_on <- dbGetQuery(poolConn, "SELECT * FROM fieldwork.viw_unmonitored_both_on")
+    unmonitored_smp_view_both_off <- dbGetQuery(poolConn, "SELECT * FROM fieldwork.viw_unmonitored_both_off")
+    unmonitored_smp_view_future_on <- dbGetQuery(poolConn, "SELECT * FROM fieldwork.viw_unmonitored_future_on")
     
     cwl_system <- dbGetQuery(poolConn,"SELECT DISTINCT admin.fun_smp_to_system(fieldwork.viw_deployment_full_cwl.smp_id::text) AS system_id FROM fieldwork.viw_deployment_full_cwl")
   
