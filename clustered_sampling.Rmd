@@ -1,0 +1,430 @@
+---
+title: "Update the clustered sampling app"
+author: "Farshad Ebrahimi"
+date: "`r lubridate::now()`"
+output: html_document
+params:
+  database: mars14_data
+  write: FALSE
+---
+
+```{r setup, include=FALSE}
+
+  knitr::opts_chunk$set(echo = TRUE)
+  knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+
+  library(DBI)
+  library(RPostgreSQL)
+  library(RPostgres)
+  library(odbc)
+  library(RODBC)
+  library(dplyr)
+  library(tidyr)
+  library(lubridate)
+  library(knitr)
+  library(stats)
+  library(gridExtra)
+  library(grid)
+  library(gtable)
+  library(ggtext)
+  library(ggplot2)
+  library(knitr)
+  library(plotly)
+  library(cluster)
+  library(factoextra)
+  library(sf)
+
+  
+  #create negate of %in%
+    `%!in%` = Negate(`%in%`)
+  
+  #db
+  con <- dbConnect(odbc(), dsn = params$database)
+  #db for SMP polygons
+  gis_apps <- paste0("MSSQL:server=PWDGISSQL;",
+                          "database=GIS_APPS;",
+                          "UID=gisread;",
+                          "PWD=gisread;")
+  gso_db <- paste0("MSSQL:server=PWDGISSQL;",
+                          "database=GSODB;",
+                          "UID=gisread;",
+                          "PWD=gisread;")
+
+```
+
+The aim of this analysis is to analyze SMP population using CWL monitoring data, categorize it, and identify underrepresented SMP features in our data set. We will also use clustering to group systems with similar characteristics and develop a stratified sampling script to randomly select a representative sample of systems proportional to their cluster and system type. This will ensure a comprehensive data set covering all types of SMPs with varying design metrics such as loading ratios, drainage area, and storm size management. The output of this analysis will help the data collection team with their future site selection.
+
+```{r data gathering, include=FALSE}
+   sysbdv <- dbGetQuery(con,"SELECT * FROM external.tbl_systembdv")
+   unmonitored_smp <- dbGetQuery(con," SELECT * FROM fieldwork.viw_unmonitored_postcon_on")   
+    
+    
+    #add the design metrics to the unmonitored smp list and renaming the loading ratio coloumn
+    table_all <- unmonitored_smp %>%
+  left_join(sysbdv, by="system_id") %>%
+  mutate(loading_ratio = sys_lrtotalda_ft2 )
+    
+
+```
+
+**-Bioinfiltration Clustering:**
+
+```{r  clustering Bioinfiltration type systems }
+
+clustered_Bioinfiltration <- table_all %>%
+  filter(sys_modelinputcategory == "Bioinfiltration") %>%
+  select(system_id, sys_impervda_ft2, loading_ratio, sys_rawstormsizemanaged_in, sys_modelinputcategory) %>%
+  na.omit() %>%
+  distinct()
+
+#normalze using mean-sd standardization
+normalized_cluster <- clustered_Bioinfiltration
+normalized_cluster[,2:4] <- scale(clustered_Bioinfiltration[,2:4])
+
+#Elbow method
+#number of clusters
+elbow_lined_fig <- fviz_nbclust(normalized_cluster[,2:4], kmeans, method = "wss")
+
+#k-means 
+# Cluster using kmeans with five clusters
+cluster_solution <- kmeans(normalized_cluster[,2:4], centers = 2)
+
+# Store the cluster assignments back into the clustering data frame object
+clustered_Bioinfiltration$cluster <-factor(cluster_solution$cluster) 
+
+# Look at the distribution of cluster assignments
+table(clustered_Bioinfiltration$cluster)
+
+```
+
+```{r elbow plot Bioinfiltration, include=TRUE, echo=FALSE}
+elbow_lined_fig
+
+```
+
+**-Bioretention (lined) clustering. Note that loading ratio field is not applicable here:**
+
+```{r Bioretention lined clustering}
+
+clustered_Bioreten_lined <- table_all %>%
+  filter(sys_modelinputcategory == "Bioretention (lined)") %>%
+  select(system_id, sys_impervda_ft2, sys_rawstormsizemanaged_in, sys_modelinputcategory) %>%
+  na.omit() %>%
+  distinct()
+
+#normalze using mean-sd standardization
+normalized_cluster <- clustered_Bioreten_lined
+normalized_cluster[,2:3] <- scale(clustered_Bioreten_lined[,2:3])
+
+#Elbow method 
+#number of clusters
+elbow_lined_fig <- fviz_nbclust(normalized_cluster[,2:3], kmeans, method = "wss")
+
+#k-means 
+# Cluster using kmeans with five clusters
+cluster_solution <- kmeans(normalized_cluster[,2:3], centers = 3)
+
+# Store the cluster assignments back into the clustering data frame object
+clustered_Bioreten_lined$cluster <-factor(cluster_solution$cluster) 
+
+# Look at the distribution of cluster assignments
+table(clustered_Bioreten_lined$cluster)
+
+```
+
+```{r elbow plot Bioretention, include=TRUE, echo=FALSE}
+elbow_lined_fig
+
+```
+
+**-Bioretention (unlined) clustering:**
+
+```{r Bioretention unlined clustering}
+
+clustered_Bioreten_unlined <- table_all %>%
+  filter(sys_modelinputcategory == "Bioretention (unlined)") %>%
+  select(system_id, sys_impervda_ft2, sys_rawstormsizemanaged_in, loading_ratio, sys_modelinputcategory) %>%
+  na.omit() %>%
+  distinct()
+
+#normalze using mean-sd standardization
+normalized_cluster <- clustered_Bioreten_unlined
+normalized_cluster[,2:4] <- scale(clustered_Bioreten_unlined[,2:4])
+
+#Elbow method 
+#number of clusters
+elbow_lined_fig <- fviz_nbclust(normalized_cluster[,2:4], kmeans, method = "wss")
+
+#k-means 
+# Cluster using kmeans with five clusters
+cluster_solution <- kmeans(normalized_cluster[,2:4], centers = 2)
+
+# Store the cluster assignments back into the clustering data frame object
+clustered_Bioreten_unlined$cluster <-factor(cluster_solution$cluster) 
+
+# Look at the distribution of cluster assignments
+table(clustered_Bioreten_unlined$cluster)
+
+```
+
+```{r elbow plot Bioretention unlined, include=TRUE, echo=FALSE}
+elbow_lined_fig
+
+```
+
+**-Subsurface infiltration clustering:**
+
+```{r Subsurface infiltration clustering}
+
+clustered_subsurface <- table_all %>%
+  filter(sys_modelinputcategory == "Subsurface infiltration") %>%
+  select(system_id, sys_impervda_ft2, sys_rawstormsizemanaged_in, loading_ratio, sys_modelinputcategory) %>%
+  na.omit() %>%
+  distinct()
+
+#normalze using mean-sd standardization
+normalized_cluster <- clustered_subsurface
+normalized_cluster[,2:4] <- scale(clustered_subsurface[,2:4])
+
+#Elbow method 
+#number of clusters
+elbow_lined_fig <-fviz_nbclust(normalized_cluster[,2:4], kmeans, method = "wss")
+
+#k-means 
+# Cluster using kmeans with five clusters
+cluster_solution <- kmeans(normalized_cluster[,2:4], centers = 2)
+
+# Store the cluster assignments back into the clustering data frame object
+clustered_subsurface$cluster <-factor(cluster_solution$cluster) 
+
+# Look at the distribution of cluster assignments
+table(clustered_subsurface$cluster)
+
+```
+
+```{r elbow plot Subsurface infiltration, include=TRUE, echo=FALSE}
+elbow_lined_fig
+
+```
+
+**-Subsurface slow release (lined) clustering:**
+
+```{r Subsurface slow release (lined)	 clustering}
+
+clustered_slowrel_lined <- table_all %>%
+  filter(sys_modelinputcategory == "Subsurface slow release (lined)") %>%
+  select(system_id, sys_impervda_ft2, sys_rawstormsizemanaged_in, sys_modelinputcategory) %>%
+  na.omit() %>%
+  distinct()
+
+#normalze using mean-sd standardization
+normalized_cluster <- clustered_slowrel_lined
+normalized_cluster[,2:3] <- scale(clustered_slowrel_lined[,2:3])
+
+#Elbow method 
+#number of clusters
+elbow_lined_fig <- fviz_nbclust(normalized_cluster[,2:3], kmeans, method = "wss")
+
+#k-means 
+# Cluster using kmeans with five clusters
+cluster_solution <- kmeans(normalized_cluster[,2:3], centers = 3)
+
+# Store the cluster assignments back into the clustering data frame object
+clustered_slowrel_lined$cluster <-factor(cluster_solution$cluster) 
+
+# Look at the distribution of cluster assignments
+
+table(clustered_slowrel_lined$cluster)
+```
+
+```{r elbow plot Subsurface slow release, include=TRUE, echo=FALSE}
+elbow_lined_fig
+
+```
+
+**-Subsurface slow release (unlined) clustering:**
+
+```{r Subsurface slow release (unlined)	}
+
+clustered_slowrel_unlined <- table_all %>%
+  filter(sys_modelinputcategory == "Subsurface slow release (unlined)") %>%
+  select(system_id, sys_impervda_ft2, sys_rawstormsizemanaged_in, loading_ratio, sys_modelinputcategory) %>%
+  na.omit() %>%
+  distinct()
+
+#normalze using mean-sd standardization
+normalized_cluster <- clustered_slowrel_unlined
+normalized_cluster[,2:3] <- scale(clustered_slowrel_unlined[,2:3])
+
+#Elbow method 
+#number of clusters
+elbow_lined_fig <- fviz_nbclust(normalized_cluster[,2:3], kmeans, method = "wss")
+
+#k-means 
+# Cluster using kmeans with five clusters
+cluster_solution <- kmeans(normalized_cluster[,2:3], centers = 2)
+
+# Store the cluster assignments back into the clustering data frame object
+clustered_slowrel_unlined$cluster <-factor(cluster_solution$cluster) 
+
+# Look at the distribution of cluster assignments
+table(clustered_slowrel_unlined$cluster)
+
+```
+
+```{r elbow plot Subsurface slow release unlined, include=TRUE, echo=FALSE}
+elbow_lined_fig
+
+```
+
+```{r batc id, include=FALSE}
+#binding all sub-type groups into one table
+sys_clustered_all <- bind_rows(clustered_Bioinfiltration[,c("system_id","cluster","sys_modelinputcategory")], clustered_Bioreten_lined[,c("system_id","cluster","sys_modelinputcategory")], clustered_Bioreten_unlined[,c("system_id","cluster","sys_modelinputcategory")], clustered_slowrel_lined[,c("system_id","cluster","sys_modelinputcategory")], clustered_slowrel_unlined[,c("system_id","cluster","sys_modelinputcategory")], clustered_subsurface[,c("system_id","cluster","sys_modelinputcategory")])
+
+current_batch_id <- dbGetQuery(con,"SELECT max(batch_id) FROM fieldwork.tbl_clustered_systems") %>% pull
+
+#add the batch id to the table
+sys_clustered_all["batch_id"] <- current_batch_id + 1
+
+
+
+```
+
+```{r address mataching and writing to db, include=FALSE}
+  basin <- suppressWarnings(st_read(gis_apps, "gisad.GSWIBASIN", quiet = TRUE)) 
+  
+  blueroof <- suppressWarnings(st_read(gis_apps, "gisad.GSWIBLUEROOF", quiet = TRUE)) 
+  
+  bumpout <- suppressWarnings(st_read(gis_apps, "gisad.GSWIBUMPOUT", quiet = TRUE)) 
+  
+  cistern <- suppressWarnings(st_read(gis_apps, "gisad.GSWICISTERN", quiet = TRUE)) 
+  
+  # something wrong with drainagewell 
+  
+  #drainagewell <- suppressWarnings(st_read(gis_apps, "GISAD.gswiDrainageWell", quiet = TRUE))
+  
+  greenroof <- suppressWarnings(st_read(gis_apps, "gisad.GSWIGREENROOF", quiet = TRUE))
+  
+  permeablepavement <- suppressWarnings(st_read(gis_apps, "gisad.GSWIPERMEABLEPAVEMENT", quiet = TRUE))
+  
+  planter <- suppressWarnings(st_read(gis_apps, "gisad.GSWIPLANTER", quiet = TRUE))
+  
+  raingarden <- suppressWarnings(st_read(gis_apps, "gisad.GSWIRAINGARDEN", quiet = TRUE))
+  
+  swale <- suppressWarnings(st_read(gis_apps, "gisad.GSWISWALE", quiet = TRUE))
+  
+  treetrench <- suppressWarnings(st_read(gis_apps, "gisad.GSWITREETRENCH", quiet = TRUE))
+  
+  tree <- suppressWarnings(st_read(gis_apps, "gisad.GSWITree", quiet = TRUE))
+  
+  trench <- suppressWarnings(st_read(gis_apps, "gisad.GSWITRENCH", quiet = TRUE)) 
+  
+  wetland <- suppressWarnings(st_read(gis_apps, "gisad.GSWIWETLAND", quiet = TRUE))
+
+
+#gso address layer
+
+  gso_address<- suppressWarnings(st_read(gso_db, "GSOADMIN.Extent_Layer", quiet = TRUE))
+  
+#bind all smps
+  # Drop columns except the SMP_ID and XY (just in case for joining) Merge all SMPs
+  
+  basin <- basin %>% select(SMP_ID, X_STATEPLANE, Y_STATEPLANE)
+  
+  blueroof<- blueroof %>% select(SMP_ID, X_STATEPLANE, Y_STATEPLANE)
+  
+  bumpout <- bumpout %>% select(SMP_ID, X_STATEPLANE, Y_STATEPLANE)
+  
+  cistern <- cistern %>% select(SMP_ID, X_STATEPLANE, Y_STATEPLANE)
+  
+  #drainagewell <- drainagewell %>% select(SMP_ID)
+  
+  greenroof<- greenroof %>% select(SMP_ID, X_STATEPLANE, Y_STATEPLANE)
+  
+  permeablepavement <- permeablepavement %>%  select(SMP_ID, X_STATEPLANE, Y_STATEPLANE)
+  
+  planter<- planter %>% select(SMP_ID, X_STATEPLANE, Y_STATEPLANE)
+  
+  raingarden <- raingarden %>% select(SMP_ID, X_STATEPLANE, Y_STATEPLANE)
+  
+  swale <- swale %>% select(SMP_ID, X_STATEPLANE, Y_STATEPLANE)
+  
+  treetrench <- treetrench %>% select(SMP_ID, X_STATEPLANE, Y_STATEPLANE)
+  
+  tree <- tree %>% select(SMP_ID, X_STATEPLANE, Y_STATEPLANE)
+  
+  trench<- trench %>% select(SMP_ID, X_STATEPLANE, Y_STATEPLANE)
+  
+  wetland <- wetland %>% select(SMP_ID, X_STATEPLANE, Y_STATEPLANE)
+  
+  # something wrong with drainagewell 
+  
+  # SMP <- bind_rows(basin, blueroof, bumpout, cistern, drainagewell, greenroof, permeablepavement, planter, raingarden, swale, treetrench, trench, wetland)
+  
+  SMP <- bind_rows(basin,tree, blueroof, bumpout, cistern, greenroof, permeablepavement, planter, raingarden, swale, treetrench, trench, wetland) 
+    
+  st_crs(SMP) <- 2272
+  st_crs(gso_address) <- 2272
+  
+  #Intersecting SMPs with address layer
+  intersect_smp_address <- st_intersects(SMP, gso_address)
+  
+  #deciphering the intersection data structure
+  
+  Inters_Obj <- intersect_smp_address
+  
+  GSI <- SMP
+  
+  output <- NULL
+  
+  df <- NULL
+  
+  for(i in 1:length(Inters_Obj)) {
+    
+    temp <- Inters_Obj[[i]]
+    
+    if (length(temp) > 0) {
+      
+      
+      Address <- gso_address[temp, "Address"] 
+      District <- gso_address[temp, "District"] 
+      Neighborhood <- gso_address[temp, "Neighborhood"] 
+      
+      SMPID <- GSI [i,"SMP_ID"]
+      SMPID <- SMPID %>% st_set_geometry(NULL)
+
+      df <- data.frame(SMPID, Address, District,Neighborhood)
+    
+      output <- rbind(output, df ) 
+      
+    }
+    
+  } 
+  
+  #trimming, name changing, switching to df frin sf
+  output['system_id'] <- gsub('-\\d+$','',output$SMP_ID ) 
+  output_final <- output %>%
+    as.data.frame() %>% 
+    select(system_id, address=Address, district=District, neighborhood=Neighborhood )
+  
+   #joining and dropping uids-this is a one-time step to replace the existing data in the db
+  clustered_systems_table_ad <- sys_clustered_all %>%
+    left_join(output_final, by="system_id") %>%
+    distinct() 
+  
+  #keep only one address per system if multiple exists
+  db_table <- clustered_systems_table_ad %>%
+    group_by(system_id) %>%
+    mutate(address = paste(address, collapse = ', ')) %>%
+    distinct()
+  
+  ###write to db 
+    if(params$write == TRUE ){
+      
+  dbWriteTable (con, SQL("fieldwork.tbl_clustered_systems"), db_table, append= TRUE, row.names = FALSE)
+      
+    }
+
+
+
+```
