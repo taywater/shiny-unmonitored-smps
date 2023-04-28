@@ -133,7 +133,7 @@
     
     
 # 1.0 UI --------
-ui <-  navbarPage("MARS Unmonitored Active SMPs", #theme = shinytheme("cerulean"),
+ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean"),
                   #1.1 Unmonitored Active SMPs -------
                   tabPanel("Unmonitored Active SMPs", value = "main_tab", 
                            titlePanel("Unmonitored Active SMPs"),
@@ -186,8 +186,8 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", #theme = shinytheme("cerulean"
                                selectInput("sensor_deployed", "Sensor Deployed?", c("","Yes", "No"), selected = NULL),
                                actionButton("update_button", "Update"),
                                downloadButton("table_dl", "Download"),
-                               h5("If either analysis fails, clicking update removes the system, adds SMPs to deny list, 
-                                  and replaces with a highlighted alternative"),
+                               h5("If either desktop analysis or pre-inspection  fails, clicking update removes the system, adds relevant SMPs to deny list, 
+                                  and replaces the system with a highlighted alternative"),
                           
                                width = 3
                              ),
@@ -544,6 +544,23 @@ server <- function(input, output, session) {
                               select(-cluster, clustered_samples_uid))
             write.xlsx(x = df_list , file = filename, rowNames = TRUE)
           }
+        )
+        
+        #Update Deny table -------
+        rv$deny_query <- reactive("select * from fieldwork.tbl_monitoring_deny_list order by smp_id")
+        
+        rv$deny_db <- reactive(dbGetQuery(poolConn, rv$deny_query()))
+        
+        rv$deny <- reactive(rv$deny_db()%>% 
+                              dplyr::select(-1) %>% 
+                              dplyr::rename("Reason" = "reason", "SMP ID" = "smp_id"))
+        
+        output$deny_table <- renderDT(
+          rv$deny(), 
+          selection = 'single', 
+          style = 'bootstrap',
+          class = 'table-responsive, table-hover', 
+          rownames = FALSE
         )
         
         
