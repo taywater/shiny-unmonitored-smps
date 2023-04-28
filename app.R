@@ -29,6 +29,8 @@
     library(openxlsx)
     #reactable
     library(reactable)
+    #Write to DB
+    library(DBI)
 
     #create negate of %in%
     `%!in%` = Negate(`%in%`)
@@ -44,6 +46,8 @@
     #gets environmental variables saved in local or pwdrstudio environment
     poolConn <- dbPool(odbc(), dsn = "mars14_data", uid = Sys.getenv("shiny_uid"), pwd = Sys.getenv("shiny_pwd"))
     
+    
+    
     #disconnect from db on stop 
     onStop(function(){
       poolClose(poolConn)
@@ -53,6 +57,8 @@
 
 #0.2 global variables and functions plus exclusion/incluion lists for unmonitored sites ----
     #query SMPs that have not been monitored 
+    # Sample for the clustering section
+    
     smp <- dbGetQuery(poolConn, "with cwl_smp AS (
              SELECT DISTINCT fieldwork.viw_deployment_full_cwl.smp_id
                FROM fieldwork.viw_deployment_full_cwl
@@ -127,7 +133,7 @@
     
     
 # 1.0 UI --------
-ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean"),
+ui <-  navbarPage("MARS Unmonitored Active SMPs", #theme = shinytheme("cerulean"),
                   #1.1 Unmonitored Active SMPs -------
                   tabPanel("Unmonitored Active SMPs", value = "main_tab", 
                            titlePanel("Unmonitored Active SMPs"),
@@ -167,6 +173,28 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean")
                            ), 
                            #must call useShinyjs() for shinyjs() functionality to work in app
                            useShinyjs()
+                  ),
+                  
+                  #1.3 Clustered systems app
+                  tabPanel("Clustered Systems",
+                           titlePanel("A list of Semi-Random Systems for Monitoring"),
+                           sidebarLayout(
+                             sidebarPanel(
+                               # Input fields for updating values in selected row
+                               selectInput("desktop_analysis", "Desktop Analysis Passed?", c("","Not Determined", "Passed", "Failed"), selected = NULL),
+                               selectInput("pre_inspection", "Pre-Inspection Passed?", c("","Not Determined", "Passed", "Failed"), selected = NULL),
+                               selectInput("sensor_deployed", "Sensor Deployed?", c("","Yes", "No"), selected = NULL),
+                               actionButton("update_button", "Update"),
+                               downloadButton("table_dl", "Download"),
+                               h5("If either analysis fails, clicking update removes the system, adds SMPs to deny list, 
+                                  and replaces with a highlighted alternative"),
+                          
+                               width = 3
+                             ),
+                             mainPanel(
+                               DTOutput("clustered_table")
+                             )
+                           )
                   )
 )
 
@@ -331,8 +359,214 @@ server <- function(input, output, session) {
         #remove pop up
         removeModal()
     })
+   
+  ### Clustered app
+    # Get the sample, add the smp type and trim it for the final table
+    clustered_samples_db <- dbGetQuery(poolConn,"SELECT * from  fieldwork.tbl_clustered_samples WHERE desktop_analysis != 'Failed' AND pre_inspection != 'Failed' ORDER BY alternative, system_id")
+    clustered_population_db <- dbGetQuery(poolConn,"SELECT * from  fieldwork.tbl_clustered_systems")
     
+    clustered_samples_db <- clustered_samples_db %>%
+      inner_join(unmonitored_smp_view_postcon_on, multiple = "all") %>%
+      group_by(system_id) %>%
+      mutate(types = paste(smp_type, collapse = ', ')) %>%
+      select(-smp_id, -smp_type, -capit_status) %>%
+      distinct()
+
+    selected_row <- reactiveVal()
+    clustered_samples <- reactiveVal(clustered_samples_db)
     
+
+    output$clustered_table <- renderDT(
+      datatable(
+        clustered_samples() %>%
+          select('System ID'= system_id, 'Category'= sys_modelinputcategory, 'SMP Type' = types,
+                 Address = address, District = district, Neighborhood = neighborhood,
+                 'Desktop Analysis' = desktop_analysis,
+                 'Pre-Inspection' = pre_inspection,
+                 'Sensor Deployment' = sensor_deployed, Alternative = alternative, Date = date_generated,) %>%
+          distinct(),
+        selection = 'single', 
+        style = 'bootstrap',
+        class = 'table-responsive, table-hover', 
+        rownames = FALSE
+      ) %>%
+        formatStyle(
+          # Specify the name(s) of the columns to format
+          columns = c("Alternative"),
+          # Check for null values in the "Alternative" column
+          # Note: is.null() function returns TRUE for NULL values, NA values, and missing values
+          backgroundColor = styleInterval(
+            is.null(clustered_samples()$Alternative),
+            c('white', 'yellow')
+          ),
+          # Apply the style to the entire row
+          target = 'row'
+        )
+    )
+    
+    #Downloading the QA query list of systems-3 sheets of systems/smps
+    output$table_dl <- downloadHandler(
+      filename = function() {
+        paste("Clustered_Systems_",Sys.Date(),".xlsx", sep = "")
+      },
+      content = function(filename){
+        
+        df_list <- list(unmonitored_systems= clustered_samples() %>%
+                          select(-cluster, clustered_samples_uid))
+        write.xlsx(x = df_list , file = filename, rowNames = TRUE)
+      }
+    )
+    
+    # Update the values in the drop-down menus when a row is selected
+    observeEvent(input$clustered_table_rows_selected, {
+      # Get the selected row
+      row <- input$clustered_table_rows_selected
+      
+      # Update the reactive value
+      if (!is.null(row) && length(row) > 0) {
+        selected_row(row)
+        updateSelectInput(session, "desktop_analysis", selected = clustered_samples()$desktop_analysis[row])
+        updateSelectInput(session, "pre_inspection", selected = clustered_samples()$pre_inspection[row])
+        updateSelectInput(session, "sensor_deployed", selected = clustered_samples()$sensor_deployed[row])
+      }
+    })
+    
+    # Update the selected row with the values from the drop-down menus when the action button is clicked
+    observeEvent(input$update_button, {
+      # Get the selected row
+      row <- selected_row()
+      
+      # Update the attributes of the selected row with the values from the drop-down menus
+      if (!is.null(row) && length(row) > 0) {
+        
+      # Update the DB 
+        edit_cluster_query <- paste0("UPDATE fieldwork.tbl_clustered_samples SET desktop_analysis = '", input$desktop_analysis, "',",
+                                     "pre_inspection = '", input$pre_inspection,"',",
+                                     "sensor_deployed = '", input$sensor_deployed,"'",
+            "WHERE system_id = '", clustered_samples()$system_id[row], "'")
+        
+        odbc::dbGetQuery(poolConn, edit_cluster_query)
+        
+        
+      # Add the failed cases to the deny list and add an alternative 
+        if (input$pre_inspection == "Failed" | input$desktop_analysis == "Failed") {
+          
+          #generate the deny tab data frame 
+          deny_smps_df <- unmonitored_smp_view_postcon_on %>%
+            filter(system_id == clustered_samples()$system_id[row]) %>%
+            select(smp_id)
+          
+          deny_df <- data.frame(smp_id = deny_smps_df,
+                                reason = "Auto-generated: Failed desktop or inspection analysis prior to deployment"
+                                )
+          
+          dbWriteTable(poolConn, SQL("fieldwork.tbl_monitoring_deny_list"), deny_df, append = TRUE, row.names = FALSE)
+          
+          #generate the alternative row
+          alternative_system_df <- clustered_population_db %>%
+            filter(sys_modelinputcategory == clustered_samples()$sys_modelinputcategory[row] & cluster == clustered_samples()$cluster[row] & system_id != clustered_samples()$system_id[row]) 
+          
+          if (nrow(alternative_system_df) != 0) {
+            
+            random_alternative_system <- alternative_system_df[sample(nrow(alternative_system_df), 1), ]
+            random_alternative_system_df <- data.frame(system_id = random_alternative_system$system_id,
+                                                       cluster = random_alternative_system$cluster,
+                                                       sys_modelinputcategory = random_alternative_system$sys_modelinputcategory,
+                                                       sample_id = clustered_samples()$sample_id[row],
+                                                       address = random_alternative_system$address,
+                                                       district = random_alternative_system$district,
+                                                       neighborhood = random_alternative_system$neighborhood,
+                                                       date_generated = Sys.Date(),
+                                                       desktop_analysis = "Not Determined",
+                                                       pre_inspection = "Not Determined",
+                                                       sensor_deployed = "No",
+                                                       alternative = clustered_samples()$system_id[row])
+            
+            dbWriteTable(poolConn, SQL("fieldwork.tbl_clustered_samples"), random_alternative_system_df, append = TRUE, row.names = FALSE)
+            
+          }  
+          
+          
+        }
+        
+        
+        
+        # Clear the selection in the table
+        selected_row(NULL)
+        
+        #Update the output
+        clustered_samples_db <- dbGetQuery(poolConn,"SELECT * from  fieldwork.tbl_clustered_samples WHERE desktop_analysis != 'Failed' AND pre_inspection != 'Failed' ORDER BY alternative, system_id")
+        
+        clustered_samples_db <- clustered_samples_db %>%
+          inner_join(unmonitored_smp_view_postcon_on, multiple = "all") %>%
+          group_by(system_id) %>%
+          mutate(types = paste(smp_type, collapse = ', ')) %>%
+          select(-smp_id, -smp_type, -capit_status) %>%
+          distinct()
+        clustered_samples(clustered_samples_db)
+        
+        output$clustered_table <- renderDT(
+          datatable(
+            clustered_samples() %>%
+              select('System ID'= system_id, 'Category'= sys_modelinputcategory, 'SMP Type' = types,
+                     Address = address, District = district, Neighborhood = neighborhood,
+                     'Desktop Analysis' = desktop_analysis,
+                     'Pre-Inspection' = pre_inspection,
+                     'Sensor Deployment' = sensor_deployed, Alternative = alternative, Date = date_generated) %>%
+              distinct(),
+            selection = 'single', 
+            style = 'bootstrap',
+            class = 'table-responsive, table-hover', 
+            rownames = FALSE
+          ) %>%
+            formatStyle(
+              # Specify the name(s) of the columns to format
+              columns = c("Alternative"),
+              # Check for null values in the "Alternative" column
+              # Note: is.null() function returns TRUE for NULL values, NA values, and missing values
+              backgroundColor = styleInterval(
+                is.null(clustered_samples()$Alternative),
+                c('white', 'yellow')
+              ),
+              # Apply the style to the entire row
+              target = 'row'
+            )
+        )
+        
+        #Downloading the QA query list of systems-3 sheets of systems/smps
+        output$table_dl <- downloadHandler(
+          filename = function() {
+            paste("Clustered_Systems_",Sys.Date(),".xlsx", sep = "")
+          },
+          content = function(filename){
+            
+            df_list <- list(unmonitored_systems= clustered_samples() %>%
+                              select(-cluster, clustered_samples_uid))
+            write.xlsx(x = df_list , file = filename, rowNames = TRUE)
+          }
+        )
+        
+        
+        
+        
+        # Update the values in the drop-down menus when a row is selected
+        observeEvent(input$clustered_table_rows_selected, {
+          # Get the selected row
+          row <- input$clustered_table_rows_selected
+          
+          # Update the reactive value
+          if (!is.null(row) && length(row) > 0) {
+            selected_row(row)
+            updateSelectInput(session, "desktop_analysis", selected = clustered_samples()$desktop_analysis[row])
+            updateSelectInput(session, "pre_inspection", selected = clustered_samples()$pre_inspection[row])
+            updateSelectInput(session, "sensor_deployed", selected = clustered_samples()$sensor_deployed[row])
+          }
+        })
+        
+        
+      }
+    })
+
     
 }
     
