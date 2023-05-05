@@ -31,6 +31,9 @@
     library(reactable)
     #Write to DB
     library(DBI)
+    #SF
+    library(sf)
+    library(ggplot2)
 
     #create negate of %in%
     `%!in%` = Negate(`%in%`)
@@ -51,7 +54,7 @@
     #                  "database=GSODB;",
     #                  "UID=gisread;",
     #                  "PWD=gisread;")
-    
+
     
     
     #disconnect from db on stop 
@@ -138,7 +141,7 @@
     }
     
   # Get the maintenance district map
-  #  Maint_Dist_db <- suppressWarnings(st_read(gso_db, "GSOADMIN.GSWI_MAINTENANCE_DISTRICTS", quiet = TRUE))
+   # Maint_Dist_db <- suppressWarnings(st_read(gso_db, "GSOADMIN.GSWI_MAINTENANCE_DISTRICTS", quiet = TRUE))
     
     
     
@@ -198,7 +201,7 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean")
                                downloadButton("table_dl", "Download"),
                                h5(strong("If either desktop analysis or pre-inspection  fails, clicking update removes the system, adds relevant SMPs to deny list, 
                                   and replaces the system with a highlighted alternative")),
-                               #plotOutput("maint_dc_plot"),
+                               # plotOutput("maint_dc_plot"),
                                width = 4
                              ),
                              mainPanel(
@@ -602,8 +605,8 @@ server <- function(input, output, session) {
     #     labs(title = "Maintenance Districts") +
     #     theme_void() +
     #     guides(fill = FALSE) +
-    #     theme(plot.title = element_text(size = 20, hjust = 0.5)) 
-    #   
+    #     theme(plot.title = element_text(size = 20, hjust = 0.5))
+    # 
     # 
     # })
     
