@@ -46,6 +46,12 @@
     #gets environmental variables saved in local or pwdrstudio environment
     poolConn <- dbPool(odbc(), dsn = "mars14_data", uid = Sys.getenv("shiny_uid"), pwd = Sys.getenv("shiny_pwd"))
     
+    #GSO DB
+    # gso_db <- paste0("MSSQL:server=PWDGISSQL;",
+    #                  "database=GSODB;",
+    #                  "UID=gisread;",
+    #                  "PWD=gisread;")
+    
     
     
     #disconnect from db on stop 
@@ -131,6 +137,10 @@
         
     }
     
+  # Get the maintenance district map
+  #  Maint_Dist_db <- suppressWarnings(st_read(gso_db, "GSOADMIN.GSWI_MAINTENANCE_DISTRICTS", quiet = TRUE))
+    
+    
     
 # 1.0 UI --------
 ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean"),
@@ -186,10 +196,10 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean")
                                selectInput("sensor_deployed", "Sensor Deployed?", c("","Yes", "No"), selected = NULL),
                                actionButton("update_button", "Update"),
                                downloadButton("table_dl", "Download"),
-                               h5("If either desktop analysis or pre-inspection  fails, clicking update removes the system, adds relevant SMPs to deny list, 
-                                  and replaces the system with a highlighted alternative"),
-                          
-                               width = 3
+                               h5(strong("If either desktop analysis or pre-inspection  fails, clicking update removes the system, adds relevant SMPs to deny list, 
+                                  and replaces the system with a highlighted alternative")),
+                               #plotOutput("maint_dc_plot"),
+                               width = 4
                              ),
                              mainPanel(
                                DTOutput("clustered_table")
@@ -583,6 +593,20 @@ server <- function(input, output, session) {
         
       }
     })
+    
+    #map
+    # output$maint_dc_plot <- renderPlot({
+    #   ggplot() +
+    #     geom_sf(data = Maint_Dist_db, aes(fill = DISTRICT)) +
+    #     geom_sf_text(data = Maint_Dist_db, aes(label = DISTRICT), size = 4, fontface = "bold") +
+    #     labs(title = "Maintenance Districts") +
+    #     theme_void() +
+    #     guides(fill = FALSE) +
+    #     theme(plot.title = element_text(size = 20, hjust = 0.5)) 
+    #   
+    # 
+    # })
+    
 
     
 }
