@@ -67,25 +67,17 @@
 #0.2 global variables and functions plus exclusion/incluion lists for unmonitored sites ----
     
     
+    
     #clustering tables-the sample id will be used to get the current set of systems
     clustered_samples_db <- dbGetQuery(poolConn,"SELECT * from  fieldwork.tbl_clustered_samples WHERE desktop_analysis != 'Failed' AND pre_inspection != 'Failed' ORDER BY district, neighborhood")
     clustered_samples_db <- clustered_samples_db %>% 
       filter(sample_id == max(clustered_samples_db$sample_id))
+    
     #population to gennerate alternatives for failed system in desktop or pre-inspection
     clustered_population_db <- dbGetQuery(poolConn,"SELECT * from  fieldwork.tbl_clustered_systems")
     
     # Monitoring the deployment records to generate sensor_deployed column
     deployed_systems <- dbGetQuery(poolConn,"select distinct admin.fun_smp_to_system(smp_id) as system_id, deployment_dtime_est from fieldwork.viw_deployment_full_cwl")
-    
-    #only deployments after the sample generation date-this is to avoid counting the past deployments with no data
-    deployed_systems <- deployed_systems %>%
-      filter(deployment_dtime_est > clustered_samples_db$date_generated)
-    
-    #most recent sample and mutate sensors deployed based on deployment records
-    clustered_samples_db <- clustered_samples_db %>% 
-      mutate(sensor_deployed = case_when(system_id %in% deployed_systems$system_id ~ "Yes",
-                                         system_id %!in% deployed_systems$system_id ~ "No")) 
-      
     
     #date of sample generation for the UI of clustering
     sample_generated_date <- clustered_samples_db %>%
@@ -93,6 +85,15 @@
       pull %>%
       min()
     
+    #only deployments after the sample generation date-this is to avoid counting the past deployments with no data
+    deployed_systems <- deployed_systems %>%
+      filter(deployment_dtime_est > sample_generated_date)
+    
+    #most recent sample and mutate sensors deployed based on deployment records
+    clustered_samples_db <- clustered_samples_db %>% 
+      mutate(sensor_deployed = case_when(system_id %in% deployed_systems$system_id ~ "Yes",
+                                         system_id %!in% deployed_systems$system_id ~ "No")) 
+   
     
     #query SMPs that have not been monitored 
     # Sample for the clustering section
