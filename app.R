@@ -31,6 +31,9 @@
     library(reactable)
     #Write to DB
     library(DBI)
+    #SF
+    library(sf)
+    library(ggplot2)
 
     #create negate of %in%
     `%!in%` = Negate(`%in%`)
@@ -47,10 +50,10 @@
     poolConn <- dbPool(odbc(), dsn = "mars14_data", uid = Sys.getenv("shiny_uid"), pwd = Sys.getenv("shiny_pwd"))
     
     #GSO DB
-    # gso_db <- paste0("MSSQL:server=PWDGISSQL;",
-    #                  "database=GSODB;",
-    #                  "UID=gisread;",
-    #                  "PWD=gisread;")
+    gso_db <- paste0("MSSQL:server=PWDGISSQL;",
+                     "database=GSODB;",
+                     "UID=gisread;",
+                     "PWD=gisread;")
     
     
     
@@ -62,6 +65,35 @@
     jscode <- 'window.onbeforeunload = function() { return "Please use the button on the webpage"; };'
 
 #0.2 global variables and functions plus exclusion/incluion lists for unmonitored sites ----
+    
+    
+    #clustering tables-the sample id will be used to get the current set of systems
+    clustered_samples_db <- dbGetQuery(poolConn,"SELECT * from  fieldwork.tbl_clustered_samples WHERE desktop_analysis != 'Failed' AND pre_inspection != 'Failed' ORDER BY district, neighborhood")
+    clustered_samples_db <- clustered_samples_db %>% 
+      filter(sample_id == max(clustered_samples_db$sample_id))
+    #population to gennerate alternatives for failed system in desktop or pre-inspection
+    clustered_population_db <- dbGetQuery(poolConn,"SELECT * from  fieldwork.tbl_clustered_systems")
+    
+    # Monitoring the deployment records to generate sensor_deployed column
+    deployed_systems <- dbGetQuery(poolConn,"select distinct admin.fun_smp_to_system(smp_id) as system_id, deployment_dtime_est from fieldwork.viw_deployment_full_cwl")
+    
+    #only deployments after the sample generation date-this is to avoid counting the past deployments with no data
+    deployed_systems <- deployed_systems %>%
+      filter(deployment_dtime_est > clustered_samples_db$date_generated)
+    
+    #most recent sample and mutate sensors deployed based on deployment records
+    clustered_samples_db <- clustered_samples_db %>% 
+      mutate(sensor_deployed = case_when(system_id %in% deployed_systems$system_id ~ "Yes",
+                                         system_id %!in% deployed_systems$system_id ~ "No")) 
+      
+    
+    #date of sample generation for the UI of clustering
+    sample_generated_date <- clustered_samples_db %>%
+      select(date_generated) %>%
+      pull %>%
+      min()
+    
+    
     #query SMPs that have not been monitored 
     # Sample for the clustering section
     
@@ -138,12 +170,12 @@
     }
     
   # Get the maintenance district map
-  #  Maint_Dist_db <- suppressWarnings(st_read(gso_db, "GSOADMIN.GSWI_MAINTENANCE_DISTRICTS", quiet = TRUE))
+    Maint_Dist_db <- suppressWarnings(st_read(gso_db, "GSOADMIN.GSWI_MAINTENANCE_DISTRICTS", quiet = TRUE))
     
     
     
 # 1.0 UI --------
-ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean"),
+ui <-  navbarPage("MARS Unmonitored Active SMPs", #theme = shinytheme("cerulean"),
                   #1.1 Unmonitored Active SMPs -------
                   tabPanel("Unmonitored Active SMPs", value = "main_tab", 
                            titlePanel("Unmonitored Active SMPs"),
@@ -187,18 +219,18 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean")
                   
                   #1.3 Clustered systems app
                   tabPanel("Clustered Systems",
-                           titlePanel("A list of Semi-Random Systems for Monitoring"),
+                           titlePanel(paste0("List of Semi-Random Systems for Monitoring"," (Generated: ", sample_generated_date,")" )),
                            sidebarLayout(
                              sidebarPanel(
                                # Input fields for updating values in selected row
                                selectInput("desktop_analysis", "Desktop Analysis Passed?", c("","Not Determined", "Passed", "Failed"), selected = NULL),
-                               selectInput("pre_inspection", "Pre-Inspection Passed?", c("","Not Determined", "Passed", "Failed"), selected = NULL),
-                               selectInput("sensor_deployed", "Sensor Deployed?", c("","Yes", "No"), selected = NULL),
+                               selectInput("pre_inspection", "Pre-Monitoring Inspection Passed?", c("","Not Determined", "Passed", "Failed"), selected = NULL),
+                               #selectInput("sensor_deployed", "Sensor Deployed?", c("","Yes", "No"), selected = NULL),
                                actionButton("update_button", "Update"),
                                downloadButton("table_dl", "Download"),
-                               h5(strong("If either desktop analysis or pre-inspection  fails, clicking update removes the system, adds relevant SMPs to deny list, 
+                               h5(strong("If either desktop analysis or Pre-Monitoring Inspection  fails, clicking update removes the system, adds relevant SMPs to deny list, 
                                   and replaces the system with a highlighted alternative")),
-                               #plotOutput("maint_dc_plot"),
+                               plotOutput("maint_dc_plot"),
                                width = 4
                              ),
                              mainPanel(
@@ -372,9 +404,7 @@ server <- function(input, output, session) {
    
   ### Clustered app
     # Get the sample, add the smp type and trim it for the final table
-    clustered_samples_db <- dbGetQuery(poolConn,"SELECT * from  fieldwork.tbl_clustered_samples WHERE desktop_analysis != 'Failed' AND pre_inspection != 'Failed' ORDER BY alternative, system_id")
-    clustered_population_db <- dbGetQuery(poolConn,"SELECT * from  fieldwork.tbl_clustered_systems")
-    
+   
     clustered_samples_db <- clustered_samples_db %>%
       inner_join(unmonitored_smp_view_postcon_on, multiple = "all") %>%
       group_by(system_id) %>%
@@ -389,29 +419,35 @@ server <- function(input, output, session) {
     output$clustered_table <- renderDT(
       datatable(
         clustered_samples() %>%
-          select('System ID'= system_id, 'Category'= sys_modelinputcategory, 'SMP Type' = types,
+          select('System ID'= system_id,'SMP Type' = types,
                  Address = address, District = district, Neighborhood = neighborhood,
                  'Desktop Analysis' = desktop_analysis,
-                 'Pre-Inspection' = pre_inspection,
-                 'Sensor Deployment' = sensor_deployed, Alternative = alternative, Date = date_generated,) %>%
+                 'Pre-Monitoring Inspection' = pre_inspection,
+                 'Sensor Deployment' = sensor_deployed, 'Replaced System' = alternative) %>%
           distinct(),
         selection = 'single', 
         style = 'bootstrap',
         class = 'table-responsive, table-hover', 
         rownames = FALSE
-      ) %>%
+      )%>% 
         formatStyle(
-          # Specify the name(s) of the columns to format
-          columns = c("Alternative"),
-          # Check for null values in the "Alternative" column
-          # Note: is.null() function returns TRUE for NULL values, NA values, and missing values
-          backgroundColor = styleInterval(
-            is.null(clustered_samples()$Alternative),
-            c('white', 'yellow')
-          ),
-          # Apply the style to the entire row
-          target = 'row'
-        )
+          'Desktop Analysis',
+          valueColumns = 'Desktop Analysis',
+          backgroundColor = styleEqual('Passed', 'lightgreen'),
+          fontWeight = styleEqual('Passed', 'bold')
+        ) %>% 
+        formatStyle(
+          'Pre-Monitoring Inspection',
+          valueColumns = 'Pre-Monitoring Inspection',
+          backgroundColor = styleEqual('Passed', 'lightgreen'),
+          fontWeight = styleEqual('Passed', 'bold')
+        ) %>% 
+        formatStyle(
+          'Sensor Deployment',
+          valueColumns = 'Sensor Deployment',
+          backgroundColor = styleEqual('Yes', 'lightgreen'),
+          fontWeight = styleEqual('Yes', 'bold')
+        ) 
     )
     
     #Downloading the QA query list of systems-3 sheets of systems/smps
@@ -437,7 +473,7 @@ server <- function(input, output, session) {
         selected_row(row)
         updateSelectInput(session, "desktop_analysis", selected = clustered_samples()$desktop_analysis[row])
         updateSelectInput(session, "pre_inspection", selected = clustered_samples()$pre_inspection[row])
-        updateSelectInput(session, "sensor_deployed", selected = clustered_samples()$sensor_deployed[row])
+        #updateSelectInput(session, "sensor_deployed", selected = clustered_samples()$sensor_deployed[row])
       }
     })
     
@@ -451,8 +487,7 @@ server <- function(input, output, session) {
         
       # Update the DB 
         edit_cluster_query <- paste0("UPDATE fieldwork.tbl_clustered_samples SET desktop_analysis = '", input$desktop_analysis, "',",
-                                     "pre_inspection = '", input$pre_inspection,"',",
-                                     "sensor_deployed = '", input$sensor_deployed,"'",
+                                     "pre_inspection = '", input$pre_inspection,"'",
             "WHERE system_id = '", clustered_samples()$system_id[row], "'")
         
         odbc::dbGetQuery(poolConn, edit_cluster_query)
@@ -505,7 +540,16 @@ server <- function(input, output, session) {
         selected_row(NULL)
         
         #Update the output
-        clustered_samples_db <- dbGetQuery(poolConn,"SELECT * from  fieldwork.tbl_clustered_samples WHERE desktop_analysis != 'Failed' AND pre_inspection != 'Failed' ORDER BY alternative, system_id")
+        clustered_samples_db <- dbGetQuery(poolConn,"SELECT * from  fieldwork.tbl_clustered_samples WHERE desktop_analysis != 'Failed' AND pre_inspection != 'Failed' ORDER BY district, neighborhood")
+        
+        #most recent sample
+        clustered_samples_db <- clustered_samples_db %>% 
+          filter(sample_id == max(clustered_samples_db$sample_id))
+        
+        #most recent sample and mutate sensors deployed based on deployment records
+        clustered_samples_db <- clustered_samples_db %>% 
+          mutate(sensor_deployed = case_when(system_id %in% deployed_systems$system_id ~ "Yes",
+                                             system_id %!in% deployed_systems$system_id ~ "No")) 
         
         clustered_samples_db <- clustered_samples_db %>%
           inner_join(unmonitored_smp_view_postcon_on, multiple = "all") %>%
@@ -518,29 +562,35 @@ server <- function(input, output, session) {
         output$clustered_table <- renderDT(
           datatable(
             clustered_samples() %>%
-              select('System ID'= system_id, 'Category'= sys_modelinputcategory, 'SMP Type' = types,
+              select('System ID'= system_id,'SMP Type' = types,
                      Address = address, District = district, Neighborhood = neighborhood,
                      'Desktop Analysis' = desktop_analysis,
-                     'Pre-Inspection' = pre_inspection,
-                     'Sensor Deployment' = sensor_deployed, Alternative = alternative, Date = date_generated) %>%
+                     'Pre-Monitoring Inspection' = pre_inspection,
+                     'Sensor Deployment' = sensor_deployed, 'Replaced System' = alternative) %>%
               distinct(),
             selection = 'single', 
             style = 'bootstrap',
             class = 'table-responsive, table-hover', 
             rownames = FALSE
-          ) %>%
+          ) %>% 
             formatStyle(
-              # Specify the name(s) of the columns to format
-              columns = c("Alternative"),
-              # Check for null values in the "Alternative" column
-              # Note: is.null() function returns TRUE for NULL values, NA values, and missing values
-              backgroundColor = styleInterval(
-                is.null(clustered_samples()$Alternative),
-                c('white', 'yellow')
-              ),
-              # Apply the style to the entire row
-              target = 'row'
-            )
+              'Desktop Analysis',
+              valueColumns = 'Desktop Analysis',
+              backgroundColor = styleEqual('Passed', 'lightgreen'),
+              fontWeight = styleEqual('Passed', 'bold')
+            ) %>% 
+            formatStyle(
+              'Pre-Monitoring Inspection',
+              valueColumns = 'Pre-Monitoring Inspection',
+              backgroundColor = styleEqual('Passed', 'lightgreen'),
+              fontWeight = styleEqual('Passed', 'bold')
+            ) %>% 
+            formatStyle(
+              'Sensor Deployment',
+              valueColumns = 'Sensor Deployment',
+              backgroundColor = styleEqual('Yes', 'lightgreen'),
+              fontWeight = styleEqual('Yes', 'bold')
+            ) 
         )
         
         #Downloading the QA query list of systems-3 sheets of systems/smps
@@ -586,7 +636,7 @@ server <- function(input, output, session) {
             selected_row(row)
             updateSelectInput(session, "desktop_analysis", selected = clustered_samples()$desktop_analysis[row])
             updateSelectInput(session, "pre_inspection", selected = clustered_samples()$pre_inspection[row])
-            updateSelectInput(session, "sensor_deployed", selected = clustered_samples()$sensor_deployed[row])
+            #updateSelectInput(session, "sensor_deployed", selected = clustered_samples()$sensor_deployed[row])
           }
         })
         
@@ -595,17 +645,17 @@ server <- function(input, output, session) {
     })
     
     #map
-    # output$maint_dc_plot <- renderPlot({
-    #   ggplot() +
-    #     geom_sf(data = Maint_Dist_db, aes(fill = DISTRICT)) +
-    #     geom_sf_text(data = Maint_Dist_db, aes(label = DISTRICT), size = 4, fontface = "bold") +
-    #     labs(title = "Maintenance Districts") +
-    #     theme_void() +
-    #     guides(fill = FALSE) +
-    #     theme(plot.title = element_text(size = 20, hjust = 0.5)) 
-    #   
-    # 
-    # })
+    output$maint_dc_plot <- renderPlot({
+      ggplot() +
+        geom_sf(data = Maint_Dist_db, aes(fill = DISTRICT)) +
+        geom_sf_text(data = Maint_Dist_db, aes(label = DISTRICT), size = 4, fontface = "bold") +
+        labs(title = "Maintenance Districts") +
+        theme_void() +
+        guides(fill = FALSE) +
+        theme(plot.title = element_text(size = 20, hjust = 0.5))
+
+
+    })
     
 
     
