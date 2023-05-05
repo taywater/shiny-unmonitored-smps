@@ -14,41 +14,41 @@
   con <- dbConnect(odbc::odbc(), dsn = "mars14_data", uid = Sys.getenv("shiny_uid"), pwd = Sys.getenv("shiny_pwd"), MaxLongVarcharSize = 8190  )
   
 #get the smps
-  dsn_infra_pub <- paste0("MSSQL:server=PWDGISSQL;",
-                          "database=INFRASTRUCTURE_PUBLIC;",
+  gis_apps <- paste0("MSSQL:server=PWDGISSQL;",
+                          "database=GSO_APPS;",
                           "UID=gisread;",
                           "PWD=gisread;")
   
   
-  basin <- suppressWarnings(st_read(dsn_infra_pub, "gisad.GSWIBASIN", quiet = TRUE)) 
+  basin <- suppressWarnings(st_read(gis_apps, "gisad.GSWIBASIN", quiet = TRUE)) 
   
-  blueroof <- suppressWarnings(st_read(dsn_infra_pub, "gisad.GSWIBLUEROOF", quiet = TRUE)) 
+  blueroof <- suppressWarnings(st_read(gis_apps, "gisad.GSWIBLUEROOF", quiet = TRUE)) 
   
-  bumpout <- suppressWarnings(st_read(dsn_infra_pub, "gisad.GSWIBUMPOUT", quiet = TRUE)) 
+  bumpout <- suppressWarnings(st_read(gis_apps, "gisad.GSWIBUMPOUT", quiet = TRUE)) 
   
-  cistern <- suppressWarnings(st_read(dsn_infra_pub, "gisad.GSWICISTERN", quiet = TRUE)) 
+  cistern <- suppressWarnings(st_read(gis_apps, "gisad.GSWICISTERN", quiet = TRUE)) 
   
   # something wrong with drainagewell 
   
-  #drainagewell <- suppressWarnings(st_read(dsn_infra_pub, "GISAD.gswiDrainageWell", quiet = TRUE))
+  #drainagewell <- suppressWarnings(st_read(gis_apps, "GISAD.gswiDrainageWell", quiet = TRUE))
   
-  greenroof <- suppressWarnings(st_read(dsn_infra_pub, "gisad.GSWIGREENROOF", quiet = TRUE))
+  greenroof <- suppressWarnings(st_read(gis_apps, "gisad.GSWIGREENROOF", quiet = TRUE))
   
-  permeablepavement <- suppressWarnings(st_read(dsn_infra_pub, "gisad.GSWIPERMEABLEPAVEMENT", quiet = TRUE))
+  permeablepavement <- suppressWarnings(st_read(gis_apps, "gisad.GSWIPERMEABLEPAVEMENT", quiet = TRUE))
   
-  planter <- suppressWarnings(st_read(dsn_infra_pub, "gisad.GSWIPLANTER", quiet = TRUE))
+  planter <- suppressWarnings(st_read(gis_apps, "gisad.GSWIPLANTER", quiet = TRUE))
   
-  raingarden <- suppressWarnings(st_read(dsn_infra_pub, "gisad.GSWIRAINGARDEN", quiet = TRUE))
+  raingarden <- suppressWarnings(st_read(gis_apps, "gisad.GSWIRAINGARDEN", quiet = TRUE))
   
-  swale <- suppressWarnings(st_read(dsn_infra_pub, "gisad.GSWISWALE", quiet = TRUE))
+  swale <- suppressWarnings(st_read(gis_apps, "gisad.GSWISWALE", quiet = TRUE))
   
-  treetrench <- suppressWarnings(st_read(dsn_infra_pub, "gisad.GSWITREETRENCH", quiet = TRUE))
+  treetrench <- suppressWarnings(st_read(gis_apps, "gisad.GSWITREETRENCH", quiet = TRUE))
   
-  tree <- suppressWarnings(st_read(dsn_infra_pub, "gisad.GSWITree", quiet = TRUE))
+  tree <- suppressWarnings(st_read(gis_apps, "gisad.GSWITree", quiet = TRUE))
   
-  trench <- suppressWarnings(st_read(dsn_infra_pub, "gisad.GSWITRENCH", quiet = TRUE)) 
+  trench <- suppressWarnings(st_read(gis_apps, "gisad.GSWITRENCH", quiet = TRUE)) 
   
-  wetland <- suppressWarnings(st_read(dsn_infra_pub, "gisad.GSWIWETLAND", quiet = TRUE))
+  wetland <- suppressWarnings(st_read(gis_apps, "gisad.GSWIWETLAND", quiet = TRUE))
 
 
 #gso address layer
