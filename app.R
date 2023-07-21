@@ -243,7 +243,7 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", #theme = shinytheme("cerulean"
                                                 br(),
                                                 textAreaInput("reason_clustering", "Reason for Adding to Deny List:", height = '85px')),
                                h5(strong("If either desktop analysis or Pre-Monitoring Inspection  fails, clicking update removes the system, adds relevant SMPs to deny list, 
-                                  and replaces the system with an alternative. You can add a reason for adding this system to the deny list in the the text box. This list only contains systems where all SMPs are on the Unmonitored Active SMPs list")),
+                                  and replaces the system with an alternative. You can add a reason for adding this system to the deny list in the text box. Please note that this list only contains systems where all SMPs are on the Unmonitored Active SMPs list")),
                                #plotOutput("maint_dc_plot"),
                                width = 3
                              ),
@@ -418,6 +418,9 @@ server <- function(input, output, session) {
    
   ### Clustered app
     # Get the sample, add the smp type and trim it for the final table
+    
+    #toggle state for the update button
+    observe(toggleState(id = "update_button", condition = !is.null(input$clustered_table_rows_selected)))
    
     clustered_samples_db <- clustered_samples_db %>%
       inner_join(smpbdv_df, by = join_by(system_id),multiple = "all") %>%
