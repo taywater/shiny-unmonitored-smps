@@ -160,9 +160,15 @@
       pull %>%
       max()
     
+    # This date will be used for looking at recent deployments, there may be old deployments with no QAed data that we want to avoid
+    deployment_date_cutoff <- clustered_population_db %>%
+      select(date_generated) %>%
+      pull %>%
+      min()
+    
     # only deployments after the sample generation date-this is to avoid counting the past deployments with no data
     deployed_systems <- deployed_systems %>%
-      filter(deployment_dtime_est > sample_generated_date)
+      filter(deployment_dtime_est > deployment_date_cutoff)
     
     # mutate sensors deployed based on deployment records
     clustered_samples_db <- clustered_samples_db %>% 
