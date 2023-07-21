@@ -239,8 +239,11 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", #theme = shinytheme("cerulean"
                                #selectInput("sensor_deployed", "Sensor Deployed?", c("","Yes", "No"), selected = NULL),
                                actionButton("update_button", "Update"),
                                downloadButton("table_dl", "Download"),
+                               conditionalPanel("input.desktop_analysis == 'Failed' | input.pre_inspection == 'Failed'",
+                                                br(),
+                                                textAreaInput("reason_clustering", "Reason for Adding to Deny List:", height = '85px')),
                                h5(strong("If either desktop analysis or Pre-Monitoring Inspection  fails, clicking update removes the system, adds relevant SMPs to deny list, 
-                                  and replaces the system with an alternative. This list only contains systems where all SMPs are on the Unmonitored Active SMPs list")),
+                                  and replaces the system with an alternative. You can add a reason for adding this system to the deny list in the the text box. This list only contains systems where all SMPs are on the Unmonitored Active SMPs list")),
                                #plotOutput("maint_dc_plot"),
                                width = 3
                              ),
@@ -420,7 +423,6 @@ server <- function(input, output, session) {
       inner_join(smpbdv_df, by = join_by(system_id),multiple = "all") %>%
       group_by(system_id) %>%
       mutate(types = paste(smp_smptype, collapse = ', ')) %>%
-      select(system_id, types, address, district, neighborhood, desktop_analysis, pre_inspection, sensor_deployed, alternative) %>%
       arrange(sensor_deployed) %>% 
       distinct() 
     #keep unique systems
@@ -509,13 +511,20 @@ server <- function(input, output, session) {
       # Add the failed cases to the deny list and add an alternative 
         if (input$pre_inspection == "Failed" | input$desktop_analysis == "Failed") {
           
+
+          #process text field to prevent sql injection
+          rv$reason_step_clust <- reactive(gsub('\'', '\'\'', input$reason_clustering))
+          rv$reason_step_clust_two <- reactive(special_char_replace(rv$reason_step_clust()))
+          rv$reason_clust <- reactive(if(nchar(rv$reason_step_clust_two()) == 0) "NULL" else rv$reason_step_clust_two())
+
+          
           #generate the deny tab data frame 
           deny_smps_df <- unmonitored_smp_view_postcon_on %>%
             filter(system_id == clustered_samples()$system_id[row]) %>%
             select(smp_id)
           
           deny_df <- data.frame(smp_id = deny_smps_df,
-                                reason = "Auto-generated: Failed desktop or inspection analysis prior to deployment"
+                                reason = rv$reason_clust()
                                 )
           
           dbWriteTable(poolConn, SQL("fieldwork.tbl_monitoring_deny_list"), deny_df, append = TRUE, row.names = FALSE)
@@ -563,7 +572,6 @@ server <- function(input, output, session) {
           inner_join(smpbdv_df, by = join_by(system_id),multiple = "all") %>%
           group_by(system_id) %>%
           mutate(types = paste(smp_smptype, collapse = ', ')) %>%
-          select(system_id, types, address, district, neighborhood, desktop_analysis, pre_inspection, sensor_deployed, alternative) %>%
           arrange(sensor_deployed) %>% 
           distinct() 
         
