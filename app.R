@@ -186,7 +186,7 @@
     
     
 # 1.0 UI --------
-ui <-  navbarPage("MARS Unmonitored Active SMPs", #theme = shinytheme("cerulean"),
+ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean"),
                   #1.1 Unmonitored Active SMPs -------
                   tabPanel("Unmonitored Active SMPs", value = "main_tab", 
                            titlePanel("Unmonitored Active SMPs"),
