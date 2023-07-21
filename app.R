@@ -423,7 +423,9 @@ server <- function(input, output, session) {
       select(system_id, types, address, district, neighborhood, desktop_analysis, pre_inspection, sensor_deployed, alternative) %>%
       arrange(sensor_deployed) %>% 
       distinct() 
-  
+    #keep unique systems
+    clustered_samples_db <- clustered_samples_db[!duplicated(clustered_samples_db$system_id), ] 
+    
     selected_row <- reactiveVal()
     clustered_samples <- reactiveVal(clustered_samples_db)
     
@@ -564,6 +566,10 @@ server <- function(input, output, session) {
           select(system_id, types, address, district, neighborhood, desktop_analysis, pre_inspection, sensor_deployed, alternative) %>%
           arrange(sensor_deployed) %>% 
           distinct() 
+        
+        #keep unique systems
+        clustered_samples_db <- clustered_samples_db[!duplicated(clustered_samples_db$system_id), ]
+        # make it reactive 
         clustered_samples(clustered_samples_db)
         
         
