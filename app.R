@@ -183,6 +183,8 @@
   # Get the maintenance district map- disabled since SF doesn't work on RStudio Connect Server 
     # Maint_Dist_db <- suppressWarnings(st_read(gso_db, "GSOADMIN.GSWI_MAINTENANCE_DISTRICTS", quiet = TRUE))
     
+   
+    
     
     
 # 1.0 UI --------
@@ -244,8 +246,17 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean")
                                                 textAreaInput("reason_clustering", "Reason for Adding to Deny List:", height = '85px')),
                                h5(strong("If either desktop analysis or Pre-Monitoring Inspection  fails, clicking update removes the system, adds relevant SMPs to deny list, 
                                   and replaces the system with an alternative. You can add a reason for adding this system to the deny list in the text box. Please note that this list only contains systems where all SMPs are on the Unmonitored Active SMPs list")),
+                               tags$figure(
+                                 class = "centerFigure",
+                                 tags$img(
+                                   src = "DM.png",
+                                   width = 550,
+                                   alt = "District Map"
+                                 ),
+                                 tags$figcaption("")
+                               ),
                                #plotOutput("maint_dc_plot"),
-                               width = 3
+                               width = 4
                              ),
                              mainPanel(
                                DTOutput("clustered_table")
