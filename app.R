@@ -49,7 +49,7 @@
     
     #set db connection
     #gets environmental variables saved in local or pwdrstudio environment
-    poolConn <- dbPool(odbc(), dsn = "mars14_data", uid = Sys.getenv("shiny_uid"), pwd = Sys.getenv("shiny_pwd"))
+    poolConn <- dbPool(odbc(), dsn = "mars14_datav2", uid = Sys.getenv("shiny_uid"), pwd = Sys.getenv("shiny_pwd"))
     
     #GSO DB
     # gso_db <- paste0("MSSQL:server=PWDGISSQL;",
@@ -193,7 +193,17 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean")
                   tabPanel("Unmonitored Active SMPs", value = "main_tab", 
                            titlePanel("Unmonitored Active SMPs"),
                            #1.1.1 sidebarPanel ------
-                           sidebarPanel(checkboxInput("exclude_future", "Exclude SMPs with Future Deployments?", value = TRUE), 
+                           sidebarPanel(
+                             tags$figure(
+                               class = "centerFigure",
+                               tags$img(
+                                 src = "pwd.png",
+                                 width = 350,
+                                 alt = "logo"
+                               ),
+                               tags$figcaption("")
+                             ),
+                                        checkboxInput("exclude_future", "Exclude SMPs with Future Deployments?", value = TRUE), 
                                         checkboxInput("exclude_postcon", "Only Exclude Post-Construction Monitoring or Testing?", value = TRUE),
                            downloadButton("download", label = "Download"), 
                            h5("This query looks for SMPs that meeting the following criteria:
@@ -203,10 +213,12 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean")
                               no continuous water level monitoring or SRTs performed; 
                               if stormwater tree, no CET; 
                               if porous pavement, no test within the past two years.
-                              ")
+                              "),
+                           width = 3
                            ),
                            #1.1.2 table ---------
                            mainPanel(
+        
                                 DTOutput("unmonitored_table")
                                 ) 
                   ), 
@@ -250,7 +262,7 @@ ui <-  navbarPage("MARS Unmonitored Active SMPs", theme = shinytheme("cerulean")
                                  class = "centerFigure",
                                  tags$img(
                                    src = "DM.png",
-                                   width = 550,
+                                   width = 580,
                                    alt = "District Map"
                                  ),
                                  tags$figcaption("")
