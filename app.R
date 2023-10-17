@@ -314,7 +314,6 @@ server <- function(input, output, session) {
       
       if(input$exclude_future == FALSE & input$exclude_postcon == FALSE){
         output_table_1 %>%
-          left_join(inlets, by = "system_id") %>%
           filter(system_id %in% eligble_inlet$system_id) %>%
           anti_join(system_with_null_smps, by = "system_id") %>%
           dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
@@ -322,21 +321,18 @@ server <- function(input, output, session) {
         
       } else if (input$exclude_future == TRUE & input$exclude_postcon == FALSE){
         output_table_2 %>%
-          left_join(inlets, by = "system_id") %>%
           filter(system_id %in% eligble_inlet$system_id) %>%
           anti_join(system_with_null_smps, by = "system_id") %>%
           dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
           distinct()
       } else if (input$exclude_future == TRUE & input$exclude_postcon == TRUE){
         output_table_3 %>%
-          left_join(inlets, by = "system_id") %>%
           filter(system_id %in% eligble_inlet$system_id) %>%
           anti_join(system_with_null_smps, by = "system_id") %>%
           dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
           distinct()
       } else{
         output_table_4 %>%
-          left_join(inlets, by = "system_id") %>%
           filter(system_id %in% eligble_inlet$system_id) %>%
           anti_join(system_with_null_smps, by = "system_id") %>%
           dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
