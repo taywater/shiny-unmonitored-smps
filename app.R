@@ -107,6 +107,7 @@
       select(smp_id, system_id, smp_type, capit_status) %>%
       mutate("other_cwl_at_this_system" =  case_when(system_id %in% cwl_system$system_id ~ TRUE,
                                                      system_id %!in% cwl_system$system_id ~ FALSE)) %>%
+      #select(-system_id) %>%
       distinct()
     
     #just future deployment on
@@ -135,7 +136,7 @@
       select(smp_id, system_id, smp_type, capit_status) %>%
       mutate("other_cwl_at_this_system" =  case_when(system_id %in% cwl_system$system_id ~ TRUE,
                                                      system_id %!in% cwl_system$system_id ~ FALSE)) %>%
-      select(-system_id) %>%
+      #select(-system_id) %>%
       distinct()
     
 
@@ -290,6 +291,14 @@ server <- function(input, output, session) {
     #2.0 set up -----
     rv <- reactiveValues()
     
+    
+    # get the list of system with eligible inlet critera_table 4 encompassess all 
+    eligble_inlet <- output_table_4 %>%
+      left_join(inlets, by = "system_id") %>%
+      filter(plug_status == "ONLINE" | is.na(plug_status)) %>%
+      dplyr::select(system_id) %>%
+      distinct()
+    
     #2.1 unmonitored tab -----
     #2.1.1 reactive output tables -------
     unmonitored_sites_db <- reactive(
@@ -297,26 +306,26 @@ server <- function(input, output, session) {
       if(input$exclude_future == FALSE & input$exclude_postcon == FALSE){
         output_table_1 %>%
           left_join(inlets, by = "system_id") %>%
-          filter(plug_status == "ONLINE" | is.na(plug_status)) %>%
+          filter(system_id %in% eligble_inlet$system_id) %>%
           dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
           distinct()
         
       } else if (input$exclude_future == TRUE & input$exclude_postcon == FALSE){
         output_table_2 %>%
           left_join(inlets, by = "system_id") %>%
-          filter(plug_status == "ONLINE" | is.na(plug_status)) %>%
+          filter(system_id %in% eligble_inlet$system_id) %>%
           dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
           distinct()
       } else if (input$exclude_future == TRUE & input$exclude_postcon == TRUE){
         output_table_3 %>%
           left_join(inlets, by = "system_id") %>%
-          filter(plug_status == "ONLINE" | is.na(plug_status)) %>%
+          filter(system_id %in% eligble_inlet$system_id) %>%
           dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
           distinct()
       } else{
         output_table_4 %>%
           left_join(inlets, by = "system_id") %>%
-          filter(plug_status == "ONLINE" | is.na(plug_status)) %>%
+          filter(system_id %in% eligble_inlet$system_id) %>%
           dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
           distinct()
       }
