@@ -160,6 +160,8 @@
     
     # Monitoring the deployment records to generate sensor_deployed column
     deployed_systems <- dbGetQuery(poolConn,"select distinct admin.fun_smp_to_system(smp_id) as system_id, deployment_dtime_est from fieldwork.viw_deployment_full_cwl")
+    # all smps
+    smpbdv_df <- dbGetQuery(poolConn,"SELECT distinct system_id, smp_id FROM external.tbl_smpbdv")
     
     # date of sample generation for the UI of clustering
     sample_generated_date <- clustered_population_db %>%
@@ -185,7 +187,7 @@
     
     
     # greenit to get the smp-type
-    smpbdv_df <- dbGetQuery(poolConn,"SELECT * FROM external.tbl_smpbdv")
+    smpbdv_df <- dbGetQuery(poolConn,"SELECT system_id, smp_id, smp_smptype FROM external.tbl_smpbdv")
     
   # Get the maintenance district map- disabled since SF doesn't work on RStudio Connect Server 
     # Maint_Dist_db <- suppressWarnings(st_read(gso_db, "GSOADMIN.GSWI_MAINTENANCE_DISTRICTS", quiet = TRUE))
@@ -292,12 +294,19 @@ server <- function(input, output, session) {
     rv <- reactiveValues()
     
     
-    # get the list of system with eligible inlet critera_table 4 encompassess all 
+    # get the list of system with eligible inlet critera_table 4 encompasses all-no inlet or at least one online:
     eligble_inlet <- output_table_4 %>%
       left_join(inlets, by = "system_id") %>%
       filter(plug_status == "ONLINE" | is.na(plug_status)) %>%
       dplyr::select(system_id) %>%
       distinct()
+    
+    #systems in which all smps are NOT available
+    system_with_null_smps <- smpbdv_df %>%
+      left_join(output_table_4, by = c("system_id","smp_id"), multiple = "all") %>%
+      filter(is.na(smp_type)) %>%
+      select(system_id) %>%
+      distinct() 
     
     #2.1 unmonitored tab -----
     #2.1.1 reactive output tables -------
@@ -307,6 +316,7 @@ server <- function(input, output, session) {
         output_table_1 %>%
           left_join(inlets, by = "system_id") %>%
           filter(system_id %in% eligble_inlet$system_id) %>%
+          anti_join(system_with_null_smps, by = "system_id") %>%
           dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
           distinct()
         
@@ -314,18 +324,21 @@ server <- function(input, output, session) {
         output_table_2 %>%
           left_join(inlets, by = "system_id") %>%
           filter(system_id %in% eligble_inlet$system_id) %>%
+          anti_join(system_with_null_smps, by = "system_id") %>%
           dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
           distinct()
       } else if (input$exclude_future == TRUE & input$exclude_postcon == TRUE){
         output_table_3 %>%
           left_join(inlets, by = "system_id") %>%
           filter(system_id %in% eligble_inlet$system_id) %>%
+          anti_join(system_with_null_smps, by = "system_id") %>%
           dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
           distinct()
       } else{
         output_table_4 %>%
           left_join(inlets, by = "system_id") %>%
           filter(system_id %in% eligble_inlet$system_id) %>%
+          anti_join(system_with_null_smps, by = "system_id") %>%
           dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
           distinct()
       }
