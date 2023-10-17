@@ -71,6 +71,13 @@
     #query SMPs that have not been monitored 
     # Sample for the clustering section
     
+    
+    inlets <- dbGetQuery(poolConn, " SELECT admin.fun_component_to_smp(i.component_id) AS smp_id, admin.fun_smp_to_system(admin.fun_component_to_smp(i.component_id)) AS system_id, * FROM external.tbl_gswiinlet i
+  WHERE i.component_id IS NOT NULL AND i.component_id NOT like '%-53-%' AND lifecycle_status != 'REM' AND plug_status != 'NA'
+  ORDER BY (admin.fun_component_to_smp(i.component_id));") %>%
+      select(system_id, component_id, plug_status) %>%
+      distinct()
+    
     smp <- dbGetQuery(poolConn, "with cwl_smp AS (
              SELECT DISTINCT fieldwork.viw_deployment_full_cwl.smp_id
                FROM fieldwork.viw_deployment_full_cwl
@@ -100,7 +107,6 @@
       select(smp_id, system_id, smp_type, capit_status) %>%
       mutate("other_cwl_at_this_system" =  case_when(system_id %in% cwl_system$system_id ~ TRUE,
                                                      system_id %!in% cwl_system$system_id ~ FALSE)) %>%
-      select(-system_id) %>%
       distinct()
     
     #just future deployment on
@@ -109,7 +115,7 @@
       select(smp_id, system_id, smp_type, capit_status) %>%
       mutate("other_cwl_at_this_system" =  case_when(system_id %in% cwl_system$system_id ~ TRUE,
                                                      system_id %!in% cwl_system$system_id ~ FALSE)) %>%
-      select(-system_id) %>%
+      #select(-system_id) %>%
       distinct()
     
     #both check boxes on
@@ -119,7 +125,7 @@
       select(smp_id, system_id, smp_type, capit_status) %>%
       mutate("other_cwl_at_this_system" =  case_when(system_id %in% cwl_system$system_id ~ TRUE,
                                                      system_id %!in% cwl_system$system_id ~ FALSE)) %>%
-      select(-system_id) %>%
+      #select(-system_id) %>%
       distinct()
     
     #just postcon check box on
@@ -289,13 +295,30 @@ server <- function(input, output, session) {
     unmonitored_sites_db <- reactive(
       
       if(input$exclude_future == FALSE & input$exclude_postcon == FALSE){
-        output_table_1 
+        output_table_1 %>%
+          left_join(inlets, by = "system_id") %>%
+          filter(plug_status == "ONLINE" | is.na(plug_status)) %>%
+          dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
+          distinct()
+        
       } else if (input$exclude_future == TRUE & input$exclude_postcon == FALSE){
-        output_table_2
+        output_table_2 %>%
+          left_join(inlets, by = "system_id") %>%
+          filter(plug_status == "ONLINE" | is.na(plug_status)) %>%
+          dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
+          distinct()
       } else if (input$exclude_future == TRUE & input$exclude_postcon == TRUE){
-        output_table_3
+        output_table_3 %>%
+          left_join(inlets, by = "system_id") %>%
+          filter(plug_status == "ONLINE" | is.na(plug_status)) %>%
+          dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
+          distinct()
       } else{
-        output_table_4
+        output_table_4 %>%
+          left_join(inlets, by = "system_id") %>%
+          filter(plug_status == "ONLINE" | is.na(plug_status)) %>%
+          dplyr::select(smp_id, smp_type, capit_status, other_cwl_at_this_system) %>%
+          distinct()
       }
   
     )
@@ -305,8 +328,8 @@ server <- function(input, output, session) {
                                          mutate(across(other_cwl_at_this_system,  
                                                        ~ case_when(. == TRUE ~ "Yes", 
                                                                    . == FALSE ~ "No"))) %>% 
-                                         dplyr::rename("SMP ID" = "smp_id", "SMP Type" = "smp_type", "Capit Status" = "capit_status", "CWL at Other SMPs in this System?" = "other_cwl_at_this_system"))
-    
+                                         dplyr::select("SMP ID" = "smp_id", "SMP Type" = "smp_type", "Capit Status" = "capit_status", "CWL at Other SMPs in this System?" = "other_cwl_at_this_system"))
+
     #Output DT
     output$unmonitored_table <- renderDT(
         rv$unmonitored_sites(),
